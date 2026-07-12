@@ -1,0 +1,83 @@
+const { AI } = require('../config/constants');
+const { randInt, weightedRandom, pick } = require('../utils/random');
+const { toFootballMinute } = require('../game-engine/matchEngine');
+
+const AI_FIRST = ['Shadow', 'Blaze', 'Storm', 'Ghost', 'Viper', 'Titan', 'Fury', 'Phantom', 'Razor', 'Bolt', 'Steel', 'Nova'];
+const AI_GK    = ['Iron Wall', 'Stone Hands', 'The Vault', 'Block Mode', 'The Fortress'];
+
+function generateAISquad(difficulty = 'Medium') {
+  const cfg  = AI[difficulty.toUpperCase()] || AI.MEDIUM;
+  const base = cfg.statBase;
+  // VOLTA = 3 outfield + 1 keeper, same as a human side.
+  return [
+    makeAIPlayer('outfield', base, pick(AI_FIRST), difficulty),
+    makeAIPlayer('outfield', base, pick(AI_FIRST), difficulty),
+    makeAIPlayer('outfield', base, pick(AI_FIRST), difficulty),
+    makeAIPlayer('goalkeeper', base, pick(AI_GK), difficulty),
+  ];
+}
+
+function makeAIPlayer(role, statBase, name, difficulty) {
+  const v  = randInt(-8, 8);
+  const s  = statBase + v;
+  const rarity = statBase >= 80 ? 'Elite' : statBase >= 68 ? 'Rare' : 'Common';
+  const stats  = role === 'goalkeeper'
+    ? { reflex: s, positioning: s + randInt(-4, 4), anticipation: s + randInt(-4, 4), strength: s, composure: s }
+    : { pace: s + randInt(-5, 5), skill: s, shooting: s + randInt(-5, 5), stamina: s, composure: s };
+
+  const id = `ai_${name.replace(/\s/g, '_').toLowerCase()}_${Date.now()}_${randInt(100, 999)}`;
+  return {
+    id,
+    _id:       id,
+    name,
+    displayName: name,
+    role,
+    rarity,
+    potential:  'Medium',
+    condition:  100,
+    form:       'Normal',
+    chemistry:  50,
+    stats,
+    isAI:       true,
+  };
+}
+
+function chooseAction(session, team) {
+  const difficulty = session.aiDifficulty || 'Medium';
+  if (difficulty === 'Easy')   return randomAction();
+  if (difficulty === 'Medium') return statAction(session, team);
+  return predictiveAction(session, team);
+}
+
+function randomAction() {
+  return pick(['pass', 'shoot', 'dribble', 'skillmove']);
+}
+
+function statAction(session, team) {
+  const squad    = team === 'home' ? session.homeSquad : session.awaySquad;
+  const attacker = squad.find(p => p.role === 'outfield') || squad[0];
+  const s        = attacker?.stats || {};
+  return weightedRandom({
+    pass:      s.skill    || 60,
+    shoot:     s.shooting || 60,
+    dribble:   s.pace     || 60,
+    skillmove: Math.round(((s.skill || 60) + (s.pace || 60)) / 2),
+  });
+}
+
+function predictiveAction(session, team) {
+  const isHome   = team === 'home';
+  const momentum = isHome ? session.homeMomentum : session.awayMomentum;
+  const scoreDiff = isHome
+    ? session.homeScore - session.awayScore
+    : session.awayScore - session.homeScore;
+  const fm        = toFootballMinute(session.timeElapsed);
+  const desperate = scoreDiff < 0 && fm > 70;
+
+  if (desperate)    return weightedRandom({ shoot: 60, skillmove: 25, dribble: 15, pass: 5 });
+  if (momentum > 65) return weightedRandom({ shoot: 40, dribble: 30, skillmove: 20, pass: 10 });
+  if (scoreDiff > 0) return weightedRandom({ pass: 50, dribble: 25, shoot: 15, skillmove: 10 });
+  return statAction(session, team);
+}
+
+module.exports = { generateAISquad, chooseAction };
