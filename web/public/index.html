@@ -2,12 +2,12 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>VOLTA · Manager</title>
 <style>
   :root{
     --ink:#0a0a0a; --paper:#ffffff; --line:#0a0a0a; --muted:#6b6b6b;
-    --soft:#f2f2f2; --shadow:6px 6px 0 var(--ink);
+    --soft:#f2f2f2; --shadow:6px 6px 0 var(--ink); --accent:#0a0a0a;
   }
   [data-theme="dark"]{
     --ink:#f4f4f4; --paper:#0c0c0c; --line:#f4f4f4; --muted:#9a9a9a;
@@ -17,42 +17,59 @@
   html,body{height:100%}
   body{background:var(--paper);color:var(--ink);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
-    -webkit-font-smoothing:antialiased;line-height:1.45;transition:background .35s,color .35s}
+    -webkit-font-smoothing:antialiased;line-height:1.45;transition:background .35s,color .35s;
+    padding-bottom:env(safe-area-inset-bottom)}
   .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
-  .wrap{max-width:1080px;margin:0 auto;padding:26px 20px 100px}
-  header{display:flex;align-items:center;justify-content:space-between;
-    border-bottom:2px solid var(--line);padding-bottom:14px;margin-bottom:26px;flex-wrap:wrap;gap:12px}
+  .wrap{max-width:1080px;margin:0 auto;padding:18px 16px 96px}
   .brand{font-weight:800;letter-spacing:.22em;font-size:14px;text-transform:uppercase}
   .brand b{font-weight:800}
-  .topright{display:flex;gap:10px;align-items:center;font-size:13px}
   .btn{font:inherit;cursor:pointer;border:2px solid var(--line);background:var(--ink);color:var(--paper);
-    padding:9px 16px;border-radius:999px;font-weight:700;letter-spacing:.04em;transition:.18s}
+    padding:11px 16px;border-radius:999px;font-weight:700;letter-spacing:.04em;transition:.18s;min-height:44px}
   .btn:hover{transform:translateY(-1px);box-shadow:4px 4px 0 var(--line)}
   .btn:active{transform:translateY(0)}
   .btn.ghost{background:transparent;color:var(--ink)}
   .btn.ghost:hover{background:var(--ink);color:var(--paper)}
   .btn:disabled{opacity:.4;cursor:not-allowed;transform:none;box-shadow:none}
-  .iconbtn{width:40px;height:40px;border-radius:999px;border:2px solid var(--line);background:transparent;
+  .iconbtn{width:44px;height:44px;border-radius:999px;border:2px solid var(--line);background:transparent;
     color:var(--ink);cursor:pointer;font-size:16px;transition:.18s}
   .iconbtn:hover{background:var(--ink);color:var(--paper)}
-  .login{min-height:80vh;display:flex;align-items:center;justify-content:center;animation:fade .5s}
-  .card{border:2px solid var(--line);border-radius:22px;padding:40px 34px;width:380px;max-width:100%;
+
+  .login{min-height:88vh;display:flex;align-items:center;justify-content:center;animation:fade .5s}
+  .card{border:2px solid var(--line);border-radius:22px;padding:36px 30px;width:380px;max-width:100%;
     box-shadow:var(--shadow);animation:rise .5s}
   .card h1{font-size:23px;letter-spacing:.03em;margin-bottom:6px}
   .card p{color:var(--muted);font-size:13px;margin-bottom:22px}
   .field{width:100%;border:2px solid var(--line);border-radius:12px;padding:13px 14px;font:inherit;
-    font-size:15px;outline:none;margin-bottom:14px;background:var(--paper);color:var(--ink);transition:.18s}
+    font-size:15px;outline:none;margin-bottom:14px;background:var(--paper);color:var(--ink);transition:.18s;min-height:44px}
   .field:focus{box-shadow:4px 4px 0 var(--line)}
   .err{color:var(--ink);background:var(--soft);border:1px solid var(--line);padding:9px 12px;
     border-radius:10px;font-size:13px;margin-bottom:14px;display:none}
-  .stats{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:30px}
+
+  /* top bar */
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:10px;
+    border-bottom:2px solid var(--line);padding-bottom:12px;margin-bottom:22px;flex-wrap:wrap}
+  .topbar .meta{display:flex;flex-direction:column;gap:2px}
+  #teamName{font-size:17px;font-weight:800}
+  .topright{display:flex;gap:8px;align-items:center}
+
+  /* bottom nav (mobile-first) */
+  .nav{position:fixed;left:0;right:0;bottom:0;z-index:40;display:flex;background:var(--paper);
+    border-top:2px solid var(--line);padding:8px 8px calc(8px + env(safe-area-inset-bottom));
+    gap:6px;max-width:1080px;margin:0 auto}
+  .nav button{flex:1;border:none;background:transparent;color:var(--muted);cursor:pointer;
+    font:inherit;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+    display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 2px;border-radius:12px}
+  .nav button .ic{font-size:18px;line-height:1}
+  .nav button.active{color:var(--ink);background:var(--soft)}
+
+  .stats{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:24px}
   .stat{border:2px solid var(--line);border-radius:14px;padding:14px;transition:.2s;animation:rise .5s}
   .stat:hover{transform:translateY(-3px);box-shadow:4px 4px 0 var(--line)}
   .stat .k{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
   .stat .v{font-size:21px;font-weight:800;margin-top:4px}
   .stat .v.small{font-size:16px}
   .sec-title{display:flex;align-items:center;justify-content:space-between;gap:10px;
-    border-bottom:2px solid var(--line);padding-bottom:8px;margin:30px 0 16px;flex-wrap:wrap}
+    border-bottom:2px solid var(--line);padding-bottom:8px;margin:26px 0 16px;flex-wrap:wrap}
   .sec-title h2{font-size:15px;letter-spacing:.14em;text-transform:uppercase}
   .xi{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
   .slot{border:2px dashed var(--line);border-radius:14px;min-height:120px;padding:10px;
@@ -100,14 +117,58 @@
   .statline .s .l{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
   .statline .s .n{font-size:16px;font-weight:800}
   .closex{position:absolute;top:14px;right:16px;cursor:pointer;font-size:20px;border:none;background:none;color:var(--ink)}
-  #toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);
+  #toast{position:fixed;left:50%;bottom:84px;transform:translateX(-50%) translateY(20px);
     background:var(--ink);color:var(--paper);border:2px solid var(--line);padding:11px 18px;border-radius:999px;
-    font-size:13px;font-weight:700;opacity:0;pointer-events:none;transition:.3s;z-index:60}
+    font-size:13px;font-weight:700;opacity:0;pointer-events:none;transition:.3s;z-index:60;max-width:90vw;text-align:center}
   #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* shop + games */
+  .panel{border:2px solid var(--line);border-radius:18px;padding:18px;margin-bottom:18px;animation:rise .45s}
+  .panel h3{font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px}
+  .panel .desc{font-size:12px;color:var(--muted);margin-bottom:14px}
+  .packs{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .pack{border:2px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+  .pack .pn{font-weight:800;font-size:15px}
+  .pack .pcost{font-size:13px}
+  .pack .prange{font-size:11px;color:var(--muted)}
+  .ctrl{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px}
+  select.field{width:auto;min-width:200px;flex:1;margin-bottom:0}
+  .reveal{margin-top:14px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+  .rp{border:2px solid var(--line);border-radius:12px;padding:10px;font-size:12px}
+  .rp .rn{font-weight:800}
+  .rp .rr{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+
+  /* penalty */
+  .pen{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}
+  .penbtn{border:2px solid var(--line);background:var(--paper);color:var(--ink);border-radius:14px;
+    padding:18px 8px;font-weight:800;font-size:15px;cursor:pointer;transition:.15s;min-height:64px}
+  .penbtn:hover{background:var(--ink);color:var(--paper);transform:translateY(-2px)}
+  .penbtn:disabled{opacity:.35;cursor:not-allowed;transform:none}
+  .pscore{display:flex;justify-content:space-around;align-items:center;border:2px solid var(--line);
+    border-radius:14px;padding:14px;font-weight:800;font-size:18px}
+  .pscore .you,.pscore .ai{display:flex;flex-direction:column;align-items:center;font-size:11px;color:var(--muted);font-weight:700;letter-spacing:.1em}
+  .pscore .big{font-size:30px;color:var(--ink)}
+  .plog{max-height:180px;overflow:auto;border:1px solid var(--line);border-radius:12px;padding:10px;margin-top:12px;font-size:13px;display:flex;flex-direction:column;gap:6px}
+  .plog .ln{animation:rise .3s}
+  .pinfo{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:8px;flex-wrap:wrap;gap:6px}
+
+  /* games grid */
+  .games{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+  .gcard{border:2px solid var(--line);border-radius:18px;padding:18px;animation:rise .45s;display:flex;flex-direction:column;gap:10px}
+  .gcard h3{font-size:14px;letter-spacing:.08em;text-transform:uppercase}
+  .gres{border:1px solid var(--line);border-radius:12px;padding:10px;font-size:13px;min-height:44px;display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+  .gicon{font-size:22px}
+
   @keyframes fade{from{opacity:0}to{opacity:1}}
   @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
-  @media(max-width:820px){.stats{grid-template-columns:repeat(3,1fr)}.xi{grid-template-columns:repeat(2,1fr)}}
-  @media(max-width:520px){.stats{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:820px){
+    .stats{grid-template-columns:repeat(3,1fr)}.xi{grid-template-columns:repeat(2,1fr)}
+    .packs{grid-template-columns:1fr}.games{grid-template-columns:1fr}
+  }
+  @media(max-width:520px){
+    .stats{grid-template-columns:repeat(2,1fr)}.wrap{padding:14px 12px 100px}
+    .topbar .brand{display:none}.stat.wide{grid-column:1/-1!important}
+  }
 </style>
 </head>
 <body>
@@ -124,20 +185,19 @@
     </div>
   </section>
 
-  <section id="dash" class="hidden">
-    <header>
-      <div>
-        <div class="brand"><b>MΞTΛ • WORKS</b></div>
-        <div id="teamName" style="font-size:18px;font-weight:800;margin-top:6px"></div>
-      </div>
-      <div class="topright">
-        <button class="iconbtn" id="themeBtn" title="Toggle theme">◐</button>
-        <button class="btn ghost" id="renameBtn">Rename</button>
-        <button class="btn ghost" id="lbBtn">Leaders</button>
-        <button class="btn" id="logoutBtn">Log out</button>
-      </div>
-    </header>
+  <header id="topbar" class="topbar hidden">
+    <div class="meta">
+      <div class="brand"><b>MΞTΛ • WORKS</b></div>
+      <div id="teamName"></div>
+    </div>
+    <div class="topright">
+      <button class="iconbtn" id="themeBtn" title="Toggle theme">◐</button>
+      <button class="btn ghost" id="renameBtn">Rename</button>
+      <button class="btn" id="logoutBtn">Log out</button>
+    </div>
+  </header>
 
+  <section id="dash" class="hidden">
     <div class="stats" id="stats"></div>
 
     <div class="sec-title"><h2>Starting XI</h2><span class="muted mono" id="xiCount"></span></div>
@@ -156,18 +216,120 @@
     <div class="roster" id="topPlayers"></div>
   </section>
 
+  <section id="shop" class="hidden">
+    <div class="panel">
+      <h3>📦 Player Packs</h3>
+      <div class="desc">Spend Metaworks to pull new players into your reserves.</div>
+      <div class="packs" id="packs"></div>
+      <div class="reveal" id="packReveal"></div>
+    </div>
+
+    <div class="panel">
+      <h3>⚡ Boosts</h3>
+      <div class="desc">Restore condition or set a player to Hot form.</div>
+      <div class="ctrl">
+        <select class="field" id="boostPlayer"></select>
+        <button class="btn" id="boostEnergy">Energy · 150</button>
+        <button class="btn" id="boostForm">Form · 200</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>🏋️ Training</h3>
+      <div class="desc">Raise a random stat (capped at 99). Elite = bigger gains.</div>
+      <div class="ctrl">
+        <select class="field" id="trainPlayer"></select>
+        <button class="btn" id="trainBase">Train · 80</button>
+        <button class="btn" id="trainElite">Elite · 250</button>
+      </div>
+      <div class="gres" id="trainRes" style="margin-top:12px">Pick a player and train them.</div>
+    </div>
+
+    <div class="panel">
+      <h3>✏️ Rename Player</h3>
+      <div class="desc">Give a player a custom nickname (50).</div>
+      <div class="ctrl">
+        <select class="field" id="renamePlayer"></select>
+        <input class="field" id="renamePName" type="text" placeholder="new nickname" style="min-width:160px;flex:1;margin-bottom:0" />
+        <button class="btn" id="renamePlayerBtn">Rename · 50</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="games" class="hidden">
+    <div class="panel">
+      <h3>⚽ Penalty Shootout (vs AI)</h3>
+      <div class="desc">Best of 5 rounds. You shoot, then you save. Pick L / C / R each turn. Win your stake ×1.8.</div>
+      <div class="ctrl">
+        <input class="field" id="penStake" type="number" min="0" value="0" placeholder="stake (0 = fun)" style="max-width:160px;flex:initial;margin-bottom:0" />
+        <button class="btn" id="penStart">Start Shootout</button>
+      </div>
+      <div class="pscore" id="penScore" style="margin-top:14px">
+        <div class="you">YOU<span class="big" id="penYou">0</span></div>
+        <div class="muted mono" id="penRound">Round 1/5</div>
+        <div class="ai">AI<span class="big" id="penAi">0</span></div>
+      </div>
+      <div class="pen" id="penBtns">
+        <button class="penbtn" data-dir="L" disabled>↙ Left</button>
+        <button class="penbtn" data-dir="C" disabled>↑ Centre</button>
+        <button class="penbtn" data-dir="R" disabled>↘ Right</button>
+      </div>
+      <div class="pinfo"><span id="penPhase">Start a shootout to play.</span><span id="penStakeInfo" class="muted"></span></div>
+      <div class="plog" id="penLog"></div>
+    </div>
+
+    <div class="games">
+      <div class="gcard">
+        <div class="gicon">🪙</div>
+        <h3>Coinflip</h3>
+        <div class="desc muted" style="font-size:12px">Double or nothing. 50/50.</div>
+        <div class="ctrl">
+          <input class="field" id="cfAmt" type="number" min="10" value="50" style="max-width:120px;flex:initial;margin-bottom:0" />
+          <button class="btn" id="cfBtn">Flip</button>
+        </div>
+        <div class="gres" id="cfRes">Pick an amount and flip.</div>
+      </div>
+
+      <div class="gcard">
+        <div class="gicon">🎰</div>
+        <h3>Slot Machine</h3>
+        <div class="desc muted" style="font-size:12px">Three matching reels pay out.</div>
+        <div class="ctrl">
+          <input class="field" id="slotStake" type="number" min="50" value="50" style="max-width:120px;flex:initial;margin-bottom:0" />
+          <button class="btn" id="slotBtn">Spin</button>
+        </div>
+        <div class="gres" id="slotRes">Spin to win.</div>
+      </div>
+
+      <div class="gcard" style="grid-column:1/-1">
+        <div class="gicon">🎲</div>
+        <h3>High / Low</h3>
+        <div class="desc muted" style="font-size:12px">A number 1–9 is shown. Guess if the next is higher or lower. Payout scales with the real odds.</div>
+        <div class="ctrl">
+          <input class="field" id="hlStake" type="number" min="20" value="50" style="max-width:120px;flex:initial;margin-bottom:0" />
+          <button class="btn" id="hlHigh">Higher ↑</button>
+          <button class="btn" id="hlLow">Lower ↓</button>
+        </div>
+        <div class="gres" id="hlRes">Higher or lower?</div>
+      </div>
+    </div>
+  </section>
+
   <section id="lbView" class="hidden">
-    <header>
-      <div class="brand"><b>MΞTΛ • WORKS</b></div>
-      <button class="btn" id="lbBack">Back</button>
-    </header>
-    <div class="sec-title"><h2>Leaderboard · Top 20 MMR</h2></div>
+    <div class="sec-title" style="margin-top:0"><h2>Leaderboard · Top 20 MMR</h2></div>
     <table class="lb">
       <thead><tr><th>#</th><th>Manager</th><th>MMR</th><th>W</th><th>L</th><th>D</th></tr></thead>
       <tbody id="lbBody"></tbody>
     </table>
   </section>
 </div>
+
+<nav class="nav hidden" id="nav">
+  <button data-view="dash" class="active"><span class="ic">▦</span>Dashboard</button>
+  <button data-view="shop"><span class="ic">🛍️</span>Shop</button>
+  <button data-view="games"><span class="ic">🎮</span>Games</button>
+  <button data-view="lbView"><span class="ic">🏆</span>Leaders</button>
+</nav>
 
 <div id="modal" class="modal hidden">
   <div class="box">
@@ -186,8 +348,15 @@ let ME = null;
 const API_BASE = "https://footpad-cobbler-attempt.ngrok-free.dev";
 
 function apiBase(){ return API_BASE && API_BASE.trim() ? API_BASE.replace(/\/$/, '') : window.location.origin; }
-function show(id){ document.querySelectorAll('#login,#dash,#lbView').forEach(s=>s.classList.add('hidden')); $(id).classList.remove('hidden'); }
-function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2200); }
+function show(view){
+  ['login','dash','shop','games','lbView'].forEach(s=>$(s).classList.toggle('hidden', s!==view));
+  const loggedIn = view!=='login';
+  $('topbar').classList.toggle('hidden', !loggedIn);
+  $('nav').classList.toggle('hidden', !loggedIn);
+  $('nav').querySelectorAll('button').forEach(b=>b.classList.toggle('active', b.dataset.view===view));
+  if(view==='lbView') loadLeaderboard();
+}
+function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2400); }
 
 async function api(path, opts={}){
   const res = await fetch(apiBase() + path, Object.assign({headers:{'Content-Type':'application/json'}}, opts));
@@ -226,17 +395,22 @@ $('loginBtn').onclick = async () => {
   $('loginErr').style.display='none';
   try{
     const { token, user } = await api('/api/login', {method:'POST', body:JSON.stringify({name:uname, password:pw})});
-    TOKEN=token; localStorage.setItem('volta_token', token); ME=user; renderDash(); loadExtra(); show('dash');
+    TOKEN=token; localStorage.setItem('volta_token', token); ME=user; afterLogin();
   }catch(e){ $('loginErr').textContent=e.message; $('loginErr').style.display='block'; }
 };
 $('pw').addEventListener('keydown', e=>{ if(e.key==='Enter') $('loginBtn').click(); });
 $('uname').addEventListener('keydown', e=>{ if(e.key==='Enter') $('pw').focus(); });
-$('logoutBtn').onclick = () => { TOKEN=null; localStorage.removeItem('volta_token'); show('login'); };
+$('logoutBtn').onclick = () => { TOKEN=null; ME=null; localStorage.removeItem('volta_token'); show('login'); };
+
+// ── nav ──
+$('nav').querySelectorAll('button').forEach(b=> b.onclick = ()=> show(b.dataset.view));
 
 // ── theme ──
 function applyTheme(t){ document.documentElement.setAttribute('data-theme', t); localStorage.setItem('volta_theme', t); }
 $('themeBtn').onclick = () => { const cur=document.documentElement.getAttribute('data-theme'); applyTheme(cur==='dark'?'light':'dark'); };
 applyTheme(localStorage.getItem('volta_theme') || 'light');
+
+function afterLogin(){ renderDash(); buildShop(); loadExtra(); show('dash'); }
 
 // ── dashboard ──
 function renderDash(){
@@ -254,13 +428,13 @@ function renderDash(){
   $('stats').innerHTML = stats.map(([k,v,big])=>`
     <div class="stat"><div class="k">${k}</div>
     <div class="v ${big?'':'small'}" data-num="${typeof v==='number'?v:''}">${typeof v==='number'?v.toLocaleString():v}</div></div>`).join('');
-  const rb = `<div class="stat" style="grid-column:span 6;border-style:dashed">
+  const tv = `<div class="stat wide" style="grid-column:span 3">
+      <div class="k">TEAM VALUE (est.)</div>
+      <div class="v" data-num="${ME.teamValue||0}">${(ME.teamValue||0).toLocaleString()}</div></div>`;
+  const rb = `<div class="stat wide" style="grid-column:span 3;border-style:dashed">
       <div class="k">RANK JOURNEY · ${ri.cur}${ri.next?` → ${ri.next}`:''}</div>
       <div class="rankbar"><i data-w="${ri.pct}"></i></div>
       <div class="muted" style="font-size:11px;margin-top:6px">${ri.pct}% to ${ri.next||'top rank'}</div></div>`;
-  const tv = `<div class="stat" style="grid-column:span 6">
-      <div class="k">TEAM VALUE (est.)</div>
-      <div class="v" data-num="${ME.teamValue||0}">${(ME.teamValue||0).toLocaleString()}</div></div>`;
   $('stats').insertAdjacentHTML('beforeend', tv + rb);
   $('stats').querySelectorAll('[data-num]').forEach(el=>{ const n=+el.dataset.num; if(n) animateNum(el,n); });
   setTimeout(()=>fillBars($('stats')), 60);
@@ -279,7 +453,7 @@ function renderDash(){
 function statLine(p){
   const s=p.stats;
   if(p.role==='goalkeeper') return `REF ${s.reflex} · POS ${s.positioning} · ANT ${s.anticipation} · STR ${s.strength} · COM ${s.composure}`;
-  return `PAC ${s.pace} · SKL ${s.skill} · SHO ${s.shooting} · STA ${s.stamina} · COM ${s.composure}`;
+  return `PAC ${s.pace} · SKL ${s.skill} · SHO ${s.shooting} · STA ${s.stamina} · COM ${s.composer}`;
 }
 function playerCard(p, where){
   const moveBtn = where==='xi'
@@ -341,7 +515,7 @@ $('saveBtn').onclick = async () => {
   finally{ $('saveBtn').disabled=false; }
 };
 
-// ── rename ──
+// ── rename team ──
 $('renameBtn').onclick = async () => {
   const name=prompt('New team name:', ME.name); if(!name) return;
   try{ const { user } = await api('/api/rename', {method:'POST', body:JSON.stringify({token:TOKEN, name})}); ME=user; renderDash(); toast('Renamed ✓'); }
@@ -349,13 +523,11 @@ $('renameBtn').onclick = async () => {
 };
 
 // ── leaderboard ──
-$('lbBtn').onclick = async () => {
+async function loadLeaderboard(){
   try{ const { board } = await api('/api/leaderboard');
     $('lbBody').innerHTML = board.map(r=>`<tr><td>${r.rank}</td><td>${r.name}</td><td>${r.mmr}</td><td>${r.wins}</td><td>${r.losses}</td><td>${r.draws}</td></tr>`).join('');
-    show('lbView');
   }catch(e){ alert(e.message); }
-};
-$('lbBack').onclick = () => show('dash');
+}
 
 // ── match history + top players ──
 async function loadExtra(){
@@ -385,9 +557,143 @@ async function loadExtra(){
   }catch(e){ $('topPlayers').innerHTML = `<div class="muted">Top players unavailable.</div>`; }
 }
 
+// ── SHOP ──
+function fillPlayerSelect(sel, includeAll=true){
+  sel.innerHTML = ME.roster.slice().sort((a,b)=>b.total-a.total)
+    .map(p=>`<option value="${p.id}">${p.name} (${p.id}) · ${p.total}</option>`).join('');
+}
+function buildShop(){
+  const packs = [
+    ['starter','Starter Pack',200,'4 players · Common–Rare'],
+    ['pro','Pro Pack',500,'4 players · Common–Legendary'],
+    ['elite','Elite Pack',1200,'5 players · Rare–Legendary'],
+  ];
+  $('packs').innerHTML = packs.map(([k,n,c,r])=>`
+    <div class="pack">
+      <div class="pn">${n}</div>
+      <div class="pcost">${c} Metaworks</div>
+      <div class="prange">${r}</div>
+      <button class="btn" data-pack="${k}" style="margin-top:auto">Buy</button>
+    </div>`).join('');
+  $('packs').querySelectorAll('button[data-pack]').forEach(b=> b.onclick = ()=> buyPack(b.dataset.pack));
+  fillPlayerSelect($('boostPlayer')); fillPlayerSelect($('trainPlayer')); fillPlayerSelect($('renamePlayer'));
+}
+async function buyPack(pack){
+  try{
+    const { players, cost, user } = await api('/api/shop/pack', {method:'POST', body:JSON.stringify({token:TOKEN, pack})});
+    ME=user; renderDash(); fillPlayerSelect($('boostPlayer')); fillPlayerSelect($('trainPlayer')); fillPlayerSelect($('renamePlayer'));
+    $('packReveal').innerHTML = players.map(p=>`
+      <div class="rp"><div class="rn">${p.name}</div><div class="rr">${p.rarity} · ${p.role==='goalkeeper'?'GK':'OF'} · ${p.total}</div></div>`).join('');
+    toast(`Opened ${pack} pack! -${cost} ✓`);
+  }catch(e){ toast(e.message); }
+}
+$('boostEnergy').onclick = ()=> doBoost('energy');
+$('boostForm').onclick = ()=> doBoost('form');
+async function doBoost(type){
+  const playerId = $('boostPlayer').value; if(!playerId) return toast('Select a player.');
+  try{
+    const { user } = await api('/api/shop/boost', {method:'POST', body:JSON.stringify({token:TOKEN, type, playerId})});
+    ME=user; renderDash(); toast(type==='energy'?'Energy restored ✓':'Form boosted ✓');
+  }catch(e){ toast(e.message); }
+}
+$('trainBase').onclick = ()=> doTrain(false);
+$('trainElite').onclick = ()=> doTrain(true);
+async function doTrain(elite){
+  const playerId = $('trainPlayer').value; if(!playerId) return toast('Select a player.');
+  try{
+    const { trained, user } = await api('/api/shop/train', {method:'POST', body:JSON.stringify({token:TOKEN, elite, playerId})});
+    ME=user; renderDash();
+    $('trainRes').textContent = `${trained.outcome} ${trained.stat.toUpperCase()} ${trained.from} → ${trained.to} (${trained.gain>=0?'+':''}${trained.gain})`;
+    toast('Training done ✓');
+  }catch(e){ $('trainRes').textContent = e.message; }
+}
+$('renamePlayerBtn').onclick = async ()=>{
+  const playerId = $('renamePlayer').value; const name=$('renamePName').value.trim();
+  if(!playerId || !name) return toast('Select a player and enter a name.');
+  try{
+    const { user } = await api('/api/shop/rename', {method:'POST', body:JSON.stringify({token:TOKEN, playerId, name})});
+    ME=user; renderDash(); fillPlayerSelect($('boostPlayer')); fillPlayerSelect($('trainPlayer')); fillPlayerSelect($('renamePlayer'));
+    $('renamePName').value=''; toast('Player renamed ✓');
+  }catch(e){ toast(e.message); }
+};
+
+// ── GAMES: PENALTY ──
+let penActive = false;
+function setPenButtons(enabled){
+  $('penBtns').querySelectorAll('.penbtn').forEach(b=>{ b.disabled = !enabled; });
+}
+function penLog(msg){ const d=document.createElement('div'); d.className='ln'; d.textContent=msg; $('penLog').prepend(d); }
+$('penStart').onclick = async ()=>{
+  const stake = parseInt($('penStake').value,10)||0;
+  try{
+    const r = await api('/api/penalty/start', {method:'POST', body:JSON.stringify({token:TOKEN, stake})});
+    penActive=true; $('penLog').innerHTML=''; penLog(r.message);
+    $('penYou').textContent=0; $('penAi').textContent=0; $('penRound').textContent=`Round 1/5`;
+    $('penStakeInfo').textContent = stake? `Stake: ${stake}` : 'Fun mode';
+    updatePen(r);
+  }catch(e){ toast(e.message); }
+};
+$('penBtns').querySelectorAll('.penbtn').forEach(b=> b.onclick = async ()=>{
+  if(!penActive) return;
+  const dir=b.dataset.dir;
+  setPenButtons(false); // lock during request to avoid double-clicks
+  try{
+    const r = await api('/api/penalty/action', {method:'POST', body:JSON.stringify({token:TOKEN, action: r_phase(), dir})});
+    penLog(r.message);
+    if(r.finished){ penActive=false; setPenButtons(false); $('penPhase').textContent='Shootout over. Start a new one!';
+      if(r.result) toast(`You ${r.result}${r.payout?` (${r.payout>=0?'+':''}${r.payout})`:''}!`); }
+    updatePen(r);
+  }catch(e){ toast(e.message); }
+});
+function r_phase(){ return $('penPhase').dataset.phase || 'shoot'; }
+function updatePen(r){
+  $('penYou').textContent=r.playerScore; $('penAi').textContent=r.aiScore;
+  $('penRound').textContent=`Round ${r.round}/5`;
+  const phase = r.phase || (r.finished?'done':'shoot');
+  $('penPhase').dataset.phase = phase;
+  if(phase==='shoot'){ $('penPhase').textContent='Your kick — pick a spot!'; setPenButtons(true); }
+  else if(phase==='save'){ $('penPhase').textContent="AI's kick — guess the spot!"; setPenButtons(true); }
+  else { setPenButtons(false); }
+  if(r.user){ ME=r.user; renderDash(); }
+}
+setPenButtons(false);
+
+// ── GAMES: COINFLIP ──
+$('cfBtn').onclick = async ()=>{
+  const amount = parseInt($('cfAmt').value,10)||0;
+  try{
+    const r = await api('/api/coinflip', {method:'POST', body:JSON.stringify({token:TOKEN, amount})});
+    ME=r.user; renderDash();
+    $('cfRes').textContent = `${r.win?'🪙 HEADS — YOU WON!':'🪙 TAILS — YOU LOST'}  ${r.net>=0?'+':''}${r.net} · bal ${r.currency}`;
+    toast(r.win?'Coinflip win! 🪙':'Coinflip lost');
+  }catch(e){ $('cfRes').textContent=e.message; }
+};
+// ── GAMES: SLOT ──
+$('slotBtn').onclick = async ()=>{
+  const stake = parseInt($('slotStake').value,10)||0;
+  try{
+    const r = await api('/api/slot', {method:'POST', body:JSON.stringify({token:TOKEN, stake})});
+    ME=r.user; renderDash();
+    $('slotRes').textContent = `${r.reels.join(' ')} — ${r.label} ${r.net>=0?'+':''}${r.net} · bal ${r.currency}`;
+    toast(r.mult?`Slot ${r.label}!`:'No luck');
+  }catch(e){ $('slotRes').textContent=e.message; }
+};
+// ── GAMES: HIGH/LOW ──
+$('hlHigh').onclick = ()=> playHL('higher');
+$('hlLow').onclick = ()=> playHL('lower');
+async function playHL(dir){
+  const stake = parseInt($('hlStake').value,10)||0;
+  try{
+    const r = await api('/api/highlow', {method:'POST', body:JSON.stringify({token:TOKEN, dir, stake})});
+    ME=r.user; renderDash();
+    $('hlRes').textContent = `🔢 ${r.first} → ${r.next} (you said ${r.dir.toUpperCase()}) — ${r.outcome} ${r.net>=0?'+':''}${r.net} · bal ${r.currency}`;
+    toast(r.outcome==='win'?'High/Low win!':r.outcome==='lose'?'High/Low lost':'Tie');
+  }catch(e){ $('hlRes').textContent=e.message; }
+}
+
 // ── boot ──
 (async function boot(){
-  if(TOKEN){ try{ const { user } = await api('/api/me?token='+TOKEN); ME=user; renderDash(); loadExtra(); show('dash'); return; }
+  if(TOKEN){ try{ const { user } = await api('/api/me?token='+TOKEN); ME=user; afterLogin(); return; }
     catch{ TOKEN=null; localStorage.removeItem('volta_token'); } }
   show('login');
 })();
