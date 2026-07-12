@@ -46,15 +46,25 @@ function newUserDoc(whatsappId, name) {
   };
 }
 
+// Normalize a WhatsApp jid: drop the multi-device ":<id>" suffix and any
+// trailing noise, so 2349011861051:23@s.whatsapp.net and
+// 2349011861051@s.whatsapp.net resolve to the same account.
+function normalizeJid(jid) {
+  if (!jid) return jid;
+  return String(jid).split(':')[0];
+}
+
 function getByWhatsappId(whatsappId) {
-  return db.findOne(TABLE, (u) => u.whatsappId === whatsappId);
+  const id = normalizeJid(whatsappId);
+  return db.findOne(TABLE, (u) => normalizeJid(u.whatsappId) === id);
 }
 
 function create(whatsappId, name) {
-  const existing = getByWhatsappId(whatsappId);
+  const id = normalizeJid(whatsappId);
+  const existing = getByWhatsappId(id);
   if (existing) return existing;
-  const doc = newUserDoc(whatsappId, name);
-  return db.insert(TABLE, whatsappId, doc);
+  const doc = newUserDoc(id, name);
+  return db.insert(TABLE, id, doc);
 }
 
 function update(whatsappId, patch) {
@@ -102,5 +112,5 @@ function banRemainingMs(user) {
 
 module.exports = {
   create, getByWhatsappId, getOrCreate, update, winRate, all,
-  roleRank, isOwner, isStaff, isBanned, banRemainingMs,
+  roleRank, isOwner, isStaff, isBanned, banRemainingMs, normalizeJid,
 };

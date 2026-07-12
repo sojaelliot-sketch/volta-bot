@@ -10,6 +10,7 @@ const { MATCH, ECONOMY, MMR, BRAND } = require('../config/constants');
 const { pick, clamp } = require('../utils/random');
 const { sleep, sendText } = require('../utils/messaging');
 const logger  = require('../utils/logger');
+const db      = require('../config/database');
 
 // Generic "the keeper catches it cleanly" lines (used for the catch save variant).
 const CATCH_LINES = [
@@ -736,6 +737,25 @@ async function endMatch(session) {
       awayMsg += `\n⭐ MVP: ${mvp ? Player.displayName(mvp) : awayScorer.player} (+${ECONOMY.MVP_BONUS})`;
     }
     await sendText(sock, awayId, awayMsg);
+  }
+
+  // ── persist a match record for the web-app history view ──
+  try {
+    const winningScorer = homeWon ? homeScorer : awayWon ? awayScorer : null;
+    const matchRecord = {
+      id: `m_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+      date: new Date().toISOString(),
+      homeId, awayId, homeName, awayName,
+      homeScore, awayScore,
+      result: homeWon ? 'W' : awayWon ? 'L' : 'D',
+      mvp: winningScorer?.id
+        ? { id: winningScorer.id, name: Player.displayName(Player.getById(winningScorer.id)) || winningScorer.player }
+        : null,
+      goalScorers: (goalScorers || []).map((g) => ({ minute: g.minute, player: g.player, team: g.team })),
+    };
+    db.insert('matches', matchRecord.id, matchRecord);
+  } catch (err) {
+    logger.error({ err }, 'Failed to record match history');
   }
 
   await decayConditions(session.homeSquad);

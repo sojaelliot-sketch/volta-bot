@@ -15,6 +15,7 @@ const crypto = require('crypto');
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const PLAYERS_FILE = path.join(DATA_DIR, 'players.json');
+const MATCHES_FILE = path.join(DATA_DIR, 'matches.json');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const PORT = process.env.PORT || 3000;
 
@@ -63,6 +64,15 @@ function publicUser(u) {
   }));
   const total = (u.wins || 0) + (u.losses || 0) + (u.draws || 0);
   const winRate = total ? Math.round((u.wins / total) * 100) : 0;
+  const playerTotal = (p) => p.role === 'goalkeeper'
+    ? p.stats.reflex + p.stats.positioning + p.stats.anticipation + p.stats.strength + p.stats.composure
+    : p.stats.pace + p.stats.skill + p.stats.shooting + p.stats.stamina + p.stats.composure;
+  const squadPower = (u.startingXI || [])
+    .map((id) => players[id]).filter(Boolean)
+    .reduce((s, p) => s + playerTotal(p), 0);
+  const teamValue = ownedIds
+    .map((id) => players[id]).filter(Boolean)
+    .reduce((s, p) => s + playerTotal(p) * 5000, 0);
   return {
     whatsappId: u.whatsappId,
     name: u.name,
@@ -74,6 +84,9 @@ function publicUser(u) {
     draws: u.draws,
     totalGoals: u.totalGoals,
     winRate,
+    squadPower,
+    teamValue,
+    streak: u.dailyStreak || 0,
     startingXI: u.startingXI || [],
     bench: u.bench || [],
     reserves: u.reserves || [],
@@ -215,6 +228,41 @@ const server = http.createServer(async (req, res) => {
         .slice(0, 20)
         .map((u, i) => ({ rank: i + 1, name: u.name, mmr: u.mmr, wins: u.wins, losses: u.losses, draws: u.draws }));
       return send(res, 200, { board });
+    }
+
+    // ── MATCH HISTORY (read-only, most recent 25) ──
+    if (p === '/api/history' && req.method === 'GET') {
+      const matches = readJson(MATCHES_FILE);
+      const list = Object.values(matches)
+        .sort((a, b) => new Date(b.date) - new Date(a.date))
+        .slice(0, 25)
+        .map((m) => ({
+          id: m.id,
+          date: m.date,
+          homeName: m.homeName,
+          awayName: m.awayName,
+          homeScore: m.homeScore,
+          awayScore: m.awayScore,
+          result: m.result,
+          mvp: m.mvp,
+          goalScorers: m.goalScorers || [],
+        }));
+      return send(res, 200, { matches: list });
+    }
+
+    // ── TOP PLAYERS (read-only, top 12 by OVR) ──
+    if (p === '/api/topplayers' && req.method === 'GET') {
+      const players = readJson(PLAYERS_FILE);
+      const list = Object.values(players)
+        .map((p) => {
+          const t = p.role === 'goalkeeper'
+            ? p.stats.reflex + p.stats.positioning + p.stats.anticipation + p.stats.strength + p.stats.composure
+            : p.stats.pace + p.stats.skill + p.stats.shooting + p.stats.stamina + p.stats.composure;
+          return { id: p.id, name: p.nickname || p.name, rarity: p.rarity, role: p.role, ovr: t, position: p.position, goals: p.goals || 0, motm: p.manOfTheMatch || 0 };
+        })
+        .sort((a, b) => b.ovr - a.ovr)
+        .slice(0, 12);
+      return send(res, 200, { players: list });
     }
 
     send(res, 404, { error: 'unknown endpoint' });

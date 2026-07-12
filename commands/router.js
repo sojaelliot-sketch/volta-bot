@@ -137,7 +137,7 @@ async function handle(sock, msg) {
     const jid = msg.key?.remoteJid;
     if (!jid) return;
 
-    const sender = msg.key?.participant || jid;
+    const sender = User.normalizeJid(msg.key?.participant || jid);
     if (jid === 'status@broadcast') return;
 
     // Self-hosted bot: the owner's own messages arrive as fromMe:true, and that
@@ -145,7 +145,9 @@ async function handle(sock, msg) {
     // sender jid (number-format differences), adopt the host account as owner so
     // every owner command works. Harmless when the bot runs on a separate number
     // (there, fromMe is only the bot's own non-command replies).
-    if (msg.key?.fromMe) {
+    // IMPORTANT: only adopt from a 1:1 chat (never a group jid like *@g.us), or a
+    // group message would hijack OWNER_ID and spawn a fake "Oasis FC" account.
+    if (msg.key?.fromMe && !jid.endsWith('@g.us')) {
       const bare = sender.split('@')[0].replace(/\D/g, '');
       const ownerBare = String(MODERATION.OWNER_ID || '').replace(/\D/g, '');
       if (bare && bare !== ownerBare) MODERATION.OWNER_ID = bare;
@@ -165,8 +167,10 @@ async function handle(sock, msg) {
       || msg.message?.imageMessage?.contextInfo
       || msg.message?.videoMessage?.contextInfo
       || {};
-    const replyTo = ctxInfo.participant || null;
-    const mentioned = (ctxInfo.mentionedJid && ctxInfo.mentionedJid[0]) || null;
+    const replyTo = ctxInfo.participant ? User.normalizeJid(ctxInfo.participant) : null;
+    const mentioned = ctxInfo.mentionedJid && ctxInfo.mentionedJid[0]
+      ? User.normalizeJid(ctxInfo.mentionedJid[0])
+      : null;
 
     logger.info({ jid, sender, cmd, args }, `cmd: ${cmd}`);
 

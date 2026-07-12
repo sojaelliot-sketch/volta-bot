@@ -7,7 +7,7 @@ const logger = require('../utils/logger');
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 
-const TABLES = ['users', 'players', 'market', 'tournaments', 'counters'];
+const TABLES = ['users', 'players', 'market', 'tournaments', 'counters', 'matches'];
 
 // In-memory cache of each table, kept in sync with disk on every write.
 const cache = {};
