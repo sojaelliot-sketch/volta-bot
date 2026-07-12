@@ -137,21 +137,16 @@ async function handle(sock, msg) {
     const jid = msg.key?.remoteJid;
     if (!jid) return;
 
-    const sender = User.normalizeJid(msg.key?.participant || jid);
+    // Self-hosted bot: the bot runs on the OWNER's own WhatsApp number, so every
+    // message the owner sends arrives as fromMe:true — and that account IS the
+    // owner. Treat any fromMe message as coming from the canonical owner jid,
+    // so owner commands always work regardless of device/format suffixes, and a
+    // group chat can NEVER hijack OWNER_ID. Messages from anyone else use their
+    // real (normalized) jid.
+    const sender = msg.key?.fromMe
+      ? User.normalizeJid(`${MODERATION.OWNER_ID}@s.whatsapp.net`)
+      : User.normalizeJid(msg.key?.participant || jid);
     if (jid === 'status@broadcast') return;
-
-    // Self-hosted bot: the owner's own messages arrive as fromMe:true, and that
-    // account IS the owner. If the configured OWNER_ID doesn't match the actual
-    // sender jid (number-format differences), adopt the host account as owner so
-    // every owner command works. Harmless when the bot runs on a separate number
-    // (there, fromMe is only the bot's own non-command replies).
-    // IMPORTANT: only adopt from a 1:1 chat (never a group jid like *@g.us), or a
-    // group message would hijack OWNER_ID and spawn a fake "Oasis FC" account.
-    if (msg.key?.fromMe && !jid.endsWith('@g.us')) {
-      const bare = sender.split('@')[0].replace(/\D/g, '');
-      const ownerBare = String(MODERATION.OWNER_ID || '').replace(/\D/g, '');
-      if (bare && bare !== ownerBare) MODERATION.OWNER_ID = bare;
-    }
 
     const text = extractText(msg.message).trim();
     if (!text) return;
