@@ -22,6 +22,11 @@ const { openPack } = require('../utils/playerGenerator');
 const { PACKS, SHOP, TRAINING, PENALTY, COINFLIP, HIGHLOW, SLOT, RARITY } = require('../config/constants');
 const { randInt, pick, weightedRandom } = require('../utils/random');
 
+// Bump when new web-only endpoints/features are added so the frontend can warn
+// the manager if their running backend process is stale (it loads routes at
+// startup, so editing server.js requires a restart to take effect).
+const WEB_VERSION = 2;
+
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const PLAYERS_FILE = path.join(DATA_DIR, 'players.json');
@@ -284,6 +289,11 @@ const server = http.createServer(async (req, res) => {
         .sort((a, b) => b.ovr - a.ovr)
         .slice(0, 12);
       return send(res, 200, { players: list });
+    }
+
+    // ── INFO (frontend compatibility check) ──
+    if (p === '/api/info' && req.method === 'GET') {
+      return send(res, 200, { ok: true, version: WEB_VERSION, features: ['shop', 'penalty', 'coinflip', 'slot', 'highlow'] });
     }
 
     // ── SHOP: OPEN PACK ──
