@@ -100,7 +100,7 @@ async function handle({ sock, msg, jid, sender, cmd, args }) {
         `🔨 *AUCTION LIVE!* 💎\n━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `🏆 Item: *${Player.displayName(item)}* (${item.rarity})\n` +
         `💲 Starting price: *${minPrice}* Metaworks\n` +
-        `🎯 Only Moderators / Officers / Owner can *!bid*!\n` +
+        `🎯 Any registered manager can *!bid*! (auction hosted by Owner/Officer)\n` +
         `⏳ Closes in ${AUCTION.DURATION_MS / 1000}s or *!auction end*.\n━━━━━━━━━━━━━━━━━━━━━━━\n${BRAND}`, msg);
       return;
     }

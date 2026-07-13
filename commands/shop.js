@@ -10,12 +10,14 @@ async function handle({ sock, msg, jid, sender, cmd, args, user }) {
   if (cmd === 'shop') return cmdShop({ sock, msg, jid, user });
   if (cmd === 'pack') return cmdPack({ sock, msg, jid, sender, args, user });
   if (cmd === 'boost') return cmdBoost({ sock, msg, jid, sender, args, user });
+  if (cmd === 'boostall') return cmdBoostAll({ sock, msg, jid, sender, args, user });
+  if (cmd === 'surgery') return cmdSurgery({ sock, msg, jid, sender, args, user });
   if (cmd === 'train') return cmdTrain({ sock, msg, jid, sender, args, user });
 }
 
 async function cmdShop({ sock, msg, jid, user }) {
   await sendText(sock, jid, `🛍️ *VOLTA SHOP* — 𝙈𝙀𝙏𝘼𝙒𝙊𝙍𝙆𝙎™
-━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━
 💳 Your balance: ${money(user.currency)}
 
 *📦 PACKS*
@@ -26,6 +28,10 @@ async function cmdShop({ sock, msg, jid, user }) {
 *⚡ BOOSTS*
 !boost energy [id] — Full condition restore — ${money(SHOP_CFG.ENERGY_RESTORE)}
 !boost form [id] — Hot form 🔥 — ${money(SHOP_CFG.FORM_BOOST)}
+!boostall energy|form — Boost your WHOLE squad — ${money(SHOP_CFG.ENERGY_RESTORE)}×players
+
+*🏥 RECOVERY*
+!surgery [id] — Instant heal from injury — ${money(SHOP_CFG.SURGERY_COST)} (max ${SHOP_CFG.SURGERY_LIMIT}/day)
 
 *🏋️ TRAINING*
 !train [id] — Basic session — ${money(TRAINING.BASE_COST)}
@@ -34,7 +40,7 @@ async function cmdShop({ sock, msg, jid, user }) {
 *✏️ OTHER*
 !rename [id] [name] — Custom nickname — ${money(SHOP_CFG.RENAME_TOKEN)}
 
-━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━
 💡 Use *!squad* to find player IDs`, msg);
 }
 
@@ -66,26 +72,36 @@ async function cmdPack({ sock, msg, jid, sender, args, user }) {
   User.update(sender, { reserves });
 
   let reveal = `✨ *${packType.toUpperCase()} PACK RESULTS* ✨
-━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
+  let legendaryPulled = false;
   for (const p of players) {
     const emoji = RARITY[p.rarity]?.emoji || '⚪';
     const role = p.role === 'goalkeeper' ? '🧤 GK' : '⚽ OF';
     const s = p.stats;
     const statLine = p.role === 'goalkeeper'
-      ? `REF ${s.reflex} POS ${s.positioning} ANT ${s.anticipation} STR ${s.strength} COM ${s.composure}`
-      : `PAC ${s.pace} SKL ${s.skill} SHO ${s.shooting} STA ${s.stamina} COM ${s.composure}`;
+      ? `REF ${s.reflex} POS ${s.positioning} ANT ${s.anticipation} STR ${s.strength} COM ${s.composer}`
+      : `PAC ${s.pace} SKL ${s.skill} SHO ${s.shooting} STA ${s.stamina} COM ${s.composer}`;
     reveal += `${emoji} *${Player.displayName(p)}*\n`;
     reveal += `   ${p.rarity} · ${role} · Age ${p.age}\n`;
     reveal += `   ${statLine}\n`;
     reveal += `   💰 ${money(Player.marketValue(p))} · ❤️ ${bar(p.condition)} · 🆔 \`${p.id.slice(0, 6)}\`\n\n`;
-    if (p.rarity === 'Legendary') reveal += `🌟 *LEGENDARY PULL!* 🎉\n\n`;
+    if (p.rarity === 'Legendary') { reveal += `🌟 *LEGENDARY PULL!* 🎉\n\n`; legendaryPulled = true; }
     else if (p.rarity === 'Elite') reveal += `💜 *Elite player!*\n\n`;
   }
 
   reveal += `━━━━━━━━━━━━━━━━━━━━━━━━
 📦 Players added to your *reserves*.
 Use *!squad* to view them or *!swap [id] xi* to promote to your lineup.`;
+
+  // Legendary pulls are shareable hype — reward a bonus pack "for the flex".
+  if (legendaryPulled) {
+    const bonus = openPack(sender, PACKS.STARTER);
+    const cur = User.getByWhatsappId(sender);
+    User.update(sender, { reserves: [...(cur.reserves || []), ...bonus.map((x) => x.id)] });
+    reveal += `\n\n🟡 *LEGENDARY ALERT!* Share this pull in 3 groups to flex it —
+and here's a FREE Starter Pack on us for the hype! 🎁 (${bonus.length} players added)`;
+  }
 
   await sendText(sock, jid, reveal, msg);
 }
@@ -134,6 +150,77 @@ async function cmdBoost({ sock, msg, jid, sender, args, user }) {
   } else {
     await sendText(sock, jid, `⚠️ Unknown boost type. Use *!boost energy [id]* or *!boost form [id]*`, msg);
   }
+}
+
+async function cmdBoostAll({ sock, msg, jid, sender, args, user }) {
+  const boostType = (args[0] || '').toLowerCase();
+  if (boostType !== 'energy' && boostType !== 'form') {
+    await sendText(sock, jid, `⚠️ Usage: *!boostall energy* or *!boostall form*\n\n⚡ energy — restore every player's condition to 100%\n🔥 form — set every player to Hot form`, msg);
+    return;
+  }
+
+  const owned = Player.getByOwner(sender);
+  if (!owned.length) {
+    await sendText(sock, jid, `❌ You don't have any players yet. Open a pack with *!shop* first.`, msg);
+    return;
+  }
+
+  const need = owned.filter((p) => boostType === 'energy' ? (p.condition || 0) < 100 : p.form !== 'Hot');
+  if (!need.length) {
+    await sendText(sock, jid, `✅ Your whole squad is already ${boostType === 'energy' ? 'at 100% condition' : 'in Hot form'}! 🔥`, msg);
+    return;
+  }
+
+  const per = boostType === 'energy' ? SHOP_CFG.ENERGY_RESTORE : SHOP_CFG.FORM_BOOST;
+  const cost = per * need.length;
+  let u = User.getByWhatsappId(sender);
+  if ((u.currency || 0) < cost) {
+    await sendText(sock, jid, `❌ Not enough! Boosting ${need.length} players costs ${money(cost)} (you have ${money(u.currency)}).`, msg);
+    return;
+  }
+
+  User.update(sender, { currency: (u.currency || 0) - cost });
+  for (const p of need) Player.update(p.id, boostType === 'energy' ? { condition: 100 } : { form: 'Hot' });
+
+  await sendText(sock, jid, `⚡ *SQUAD BOOSTED!*\n${need.length} players ${boostType === 'energy' ? 'restored to 100% 🟢' : 'set to Hot form 🔥'}\n💰 -${money(cost)}`, msg);
+}
+
+async function cmdSurgery({ sock, msg, jid, sender, args, user }) {
+  const playerId = args[0];
+  if (!playerId) {
+    await sendText(sock, jid, `⚠️ Usage: *!surgery [id]* — Instantly heal an injured player.\n💰 ${money(SHOP_CFG.SURGERY_COST)} · max ${SHOP_CFG.SURGERY_LIMIT}/day`, msg);
+    return;
+  }
+  const player = Player.getByOwner(sender).find((p) => p.id.startsWith(playerId));
+  if (!player) {
+    await sendText(sock, jid, `❌ No player found with ID *${playerId}*. Use *!squad* to find IDs.`, msg);
+    return;
+  }
+  if (!player.injuredUntil || new Date(player.injuredUntil).getTime() <= Date.now()) {
+    await sendText(sock, jid, `✅ *${Player.displayName(player)}* isn't injured — no surgery needed! 🙌`, msg);
+    return;
+  }
+
+  let u = User.getByWhatsappId(sender);
+  const today = new Date().toISOString().slice(0, 10);
+  if (u.surgeryDay !== today) {
+    User.update(sender, { surgeryDay: today, surgeriesToday: 0 });
+    u = User.getByWhatsappId(sender);
+  }
+  if ((u.surgeriesToday || 0) >= SHOP_CFG.SURGERY_LIMIT) {
+    await sendText(sock, jid, `⛔ Surgery limit reached (${SHOP_CFG.SURGERY_LIMIT}/day). Try again tomorrow! 🗓️`, msg);
+    return;
+  }
+  if ((u.currency || 0) < SHOP_CFG.SURGERY_COST) {
+    await sendText(sock, jid, `❌ Not enough! Surgery costs ${money(SHOP_CFG.SURGERY_COST)}. You have ${money(u.currency)}.`, msg);
+    return;
+  }
+
+  User.update(sender, { currency: (u.currency || 0) - SHOP_CFG.SURGERY_COST, surgeriesToday: (u.surgeriesToday || 0) + 1 });
+  Player.update(player.id, { injuredUntil: null });
+
+  const used = User.getByWhatsappId(sender).surgeriesToday || 0;
+  await sendText(sock, jid, `🏥 *SURGERY COMPLETE!* 🔧\n⚡ *${Player.displayName(player)}* is fully healed and ready to ball!\n💰 -${money(SHOP_CFG.SURGERY_COST)} · Surgeries today: ${used}/${SHOP_CFG.SURGERY_LIMIT}`, msg);
 }
 
 async function cmdTrain({ sock, msg, jid, sender, args, user }) {
@@ -207,12 +294,12 @@ async function cmdTrain({ sock, msg, jid, sender, args, user }) {
   const gainDisplay = gain > 0 ? `+${gain}` : '—';
 
   await sendText(sock, jid, `🏋️ *TRAINING ${isElite ? 'ELITE' : 'SESSION'}*
-━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━
 🧑‍🏫 *${Player.displayName(player)}*
 📊 Stat: ${statLabel} ${currentVal} → ${newVal} (${gainDisplay})
 ${outcome}
 💰 Cost: -${money(cost)}
-━━━━━━━━━━━━━━━━━━━━━━━━`, msg);
+━━━━━━━━━━━━━━━━━━━━━━━`, msg);
 }
 
 module.exports = { handle };

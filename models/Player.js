@@ -57,6 +57,8 @@ function newPlayerDoc({
     form: 'Normal',
     chemistry: 0,
 
+    injuredUntil: null,   // ISO timestamp; null = healthy
+
     isListed: false,
     marketPrice: 0,
     isAI: false,

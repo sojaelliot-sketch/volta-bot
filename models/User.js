@@ -36,6 +36,10 @@ function newUserDoc(whatsappId, name) {
     currentMatchId: null,
     registered: false,
 
+    // Referral
+    refCode: null,          // this manager's invite code
+    referredBy: null,       // whatsappId of the manager who referred them
+
     // Moderation
     role: 'user',          // user | moderator | officer
     warnings: 0,
@@ -59,11 +63,23 @@ function getByWhatsappId(whatsappId) {
   return db.findOne(TABLE, (u) => normalizeJid(u.whatsappId) === id);
 }
 
+// Generate a unique 6-char invite code (avoids ambiguous chars).
+function genRefCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  for (let i = 0; i < 30; i++) {
+    let c = '';
+    for (let j = 0; j < 6; j++) c += chars[Math.floor(Math.random() * chars.length)];
+    if (!db.findOne(TABLE, (u) => u.refCode === c)) return c;
+  }
+  return 'VOLTA' + Math.floor(Math.random() * 1e6);
+}
+
 function create(whatsappId, name) {
   const id = normalizeJid(whatsappId);
   const existing = getByWhatsappId(id);
   if (existing) return existing;
   const doc = newUserDoc(id, name);
+  doc.refCode = genRefCode();
   return db.insert(TABLE, id, doc);
 }
 
@@ -111,6 +127,6 @@ function banRemainingMs(user) {
 }
 
 module.exports = {
-  create, getByWhatsappId, getOrCreate, update, winRate, all,
+  create, getByWhatsappId, getOrCreate, update, winRate, all, genRefCode,
   roleRank, isOwner, isStaff, isBanned, banRemainingMs, normalizeJid,
 };

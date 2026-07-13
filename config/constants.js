@@ -123,12 +123,39 @@ module.exports = {
     HARD:   { statBase: 85, randomness: 0.05 },
   },
 
+  // ─── CLUBS (real club names used for AI opponents) ───────────────────────
+  CLUBS: [
+    'Riverside United', 'Iron City FC', 'Northgate Rovers', 'Harbour Town', 'Crown Athletic',
+    'Vale Wanderers', 'Eastfield City', 'Kingsbridge United', 'Summit FC', 'Lakeside Albion',
+    'Westbrook Town', 'Granite FC', 'Brookside Rangers', 'Highmoor United', 'Castleford',
+    'Seabreeze FC', 'Millfield Town', 'Ravenhill Athletic', 'Ashford City', 'Thornwood United',
+    'Crestview Rovers', 'Bayside FC', 'Ironbridge Town', 'Lantern City', 'Redford United',
+    'Stonehaven FC', 'Meridian Athletic', 'Foxglove Town', 'Bellwood Rangers', 'Cobalt United',
+    'Hartley City', 'Whitlock FC', 'Greenfield Rovers', 'Marble United', 'Pinecrest Athletic',
+  ],
+
   // ─── SHOP ──────────────────────────────────────────────────────────────
   SHOP: {
     ENERGY_RESTORE: 150,
     FORM_BOOST:     200,
     FOCUS_BOOST:    100,
     RENAME_TOKEN:    50,
+    SURGERY_COST:   300,    // instant heal from injury
+    SURGERY_LIMIT:  3,      // max surgeries per user, per day
+  },
+
+  // ─── INJURY ─────────────────────────────────────────────────────────────
+  INJURY: {
+    CHANCE_PER_EVENT: 0.02,   // per simulated match event
+    CHANCE_PER_CHANCE: 0.03,  // per interactive PvP chance
+    MIN_HOURS: 6,
+    MAX_HOURS: 48,
+  },
+
+  // ─── REFERRAL (virality) ────────────────────────────────────────────────
+  REFERRAL: {
+    REWARD:        250,      // Metaworks the referrer earns
+    REFEREE_BONUS: 150,      // Metaworks the new manager gets on top of starter
   },
 
   // ─── ACADEMY ───────────────────────────────────────────────────────────

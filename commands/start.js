@@ -1,9 +1,12 @@
 const User = require('../models/User');
 const Player = require('../models/Player');
 const { buildStarterSquad } = require('../utils/playerGenerator');
-const { RARITY, MODERATION } = require('../config/constants');
+const { RARITY, MODERATION, REFERRAL, BRAND } = require('../config/constants');
 const { money, bar } = require('../utils/formatter');
 const { sendText, typing } = require('../utils/messaging');
+
+// ref codes are 6 chars from A-Z / 2-9
+const REF_CODE_RE = /^[A-Z0-9]{6}$/;
 
 async function handle({ sock, msg, jid, sender, cmd, args }) {
   // Registration is closed — only the owner account exists. Strangers can't
@@ -22,7 +25,7 @@ async function handle({ sock, msg, jid, sender, cmd, args }) {
     }
     await sendText(sock, jid,
       `⚽ *WELCOME TO VOLTA* — ${BRAND}
-━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━
 🎮 *The 5-a-side football bot for WhatsApp*
 
 Build your squad 🧢
@@ -31,14 +34,14 @@ Play matches ⚽
 Trade players 🏪
 Climb the ranks 🏆
 
-━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━
 👉 To get started, type:
 
 *!register [your name]*
 
 Example: *!register Elliot*
 
-━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━
 💲 You'll receive starter pack + ${money(500)} Metaworks!`, msg);
     return;
   }
@@ -49,16 +52,29 @@ Example: *!register Elliot*
     return;
   }
 
-  const name = args.join(' ').trim().slice(0, 24);
+  // Parse: trailing token that looks like a referral code becomes the code,
+  // everything else is the manager name. eg !register Elliot VOLTA7
+  const raw = args.slice();
+  let code = null;
+  if (raw.length > 1 && REF_CODE_RE.test(raw[raw.length - 1])) {
+    code = raw.pop().toUpperCase();
+  }
+  const name = raw.join(' ').trim().slice(0, 24);
   if (!name) {
-    await sendText(sock, jid, `⚠️ Give me a manager name:\n*!register [name]*\n\nExample: *!register Elliot*`, msg);
+    await sendText(sock, jid, `⚠️ Give me a manager name:\n*!register [name]* *(optional: referral code)*\n\nExample: *!register Elliot*`, msg);
     return;
+  }
+
+  // Resolve referrer (by code) before creating the account.
+  let referrer = null;
+  if (code) {
+    referrer = User.all().find((u) => u.refCode === code && u.whatsappId !== User.normalizeJid(sender));
   }
 
   User.create(sender, name);
   await typing(sock, jid, 600);
   await sendText(sock, jid, `✅ *Manager Profile Created!*
-━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━
 🧑‍💼 Name: *${name}*
 💰 Balance: ${money(500)}
 
@@ -69,29 +85,48 @@ Example: *!register Elliot*
   const startingXI = players.map((p) => p.id);
   const bench = [];
 
-  User.update(sender, { registered: true, startingXI, bench });
+  const patch = { registered: true, startingXI, bench };
+  if (referrer) {
+    patch.referredBy = referrer.whatsappId;
+    // reward the new manager
+    patch.currency = 500 + (REFERRAL.REFEREE_BONUS || 0);
+  }
+  User.update(sender, patch);
+
+  // Pay the referrer their reward.
+  if (referrer) {
+    User.update(referrer.whatsappId, {
+      currency: (referrer.currency || 0) + (REFERRAL.REWARD || 0),
+    });
+  }
 
   let reveal = `✨ *STARTER SQUAD SIGNED!* ✨
-━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━
 📋 *3 outfield + 1 keeper* — ready to ball!\n\n`;
   for (const p of players) {
     const emoji = RARITY[p.rarity]?.emoji || '⚪';
     const role = p.role === 'goalkeeper' ? '🧤 GK' : '⚽ OF';
     const s = p.stats;
     const statLine = p.role === 'goalkeeper'
-      ? `REF ${s.reflex} POS ${s.positioning} ANT ${s.anticipation} STR ${s.strength} COM ${s.composure}`
-      : `PAC ${s.pace} SKL ${s.skill} SHO ${s.shooting} STA ${s.stamina} COM ${s.composure}`;
+      ? `REF ${s.reflex} POS ${s.positioning} ANT ${s.anticipation} STR ${s.strength} COM ${s.composer}`
+      : `PAC ${s.pace} SKL ${s.skill} SHO ${s.shooting} STA ${s.stamina} COM ${s.composer}`;
     reveal += `${emoji} *${Player.displayName(p)}* — ${role} · ${p.rarity} · Age ${p.age}\n`;
     reveal += `   ${statLine}\n`;
     reveal += `   💰 ${money(Player.marketValue(p))} · ❤️ ${bar(p.condition)} · 🆔 \`${p.id.slice(0, 6)}\`\n\n`;
   }
   reveal += `━━━━━━━━━━━━━━━━━━━━━━━━
 ⚡ Your Starting XI is locked in.
+`;
 
+  if (referrer) {
+    reveal += `\n🤝 Referred by *${referrer.name}*! You both earned bonus Metaworks.`;
+  }
+  reveal += `
 📋 *!squad* — View your team
 🆚 *!play* — First match!
 🏪 *!shop* — Buy more packs
-📅 *!daily* — Claim free rewards`;
+📅 *!daily* — Claim free rewards
+📨 *!invite* — Invite friends & earn`;
 
   await sendText(sock, jid, reveal, msg);
 }

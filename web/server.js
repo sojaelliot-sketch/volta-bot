@@ -25,12 +25,13 @@ const { randInt, pick, weightedRandom } = require('../utils/random');
 // Bump when new web-only endpoints/features are added so the frontend can warn
 // the manager if their running backend process is stale (it loads routes at
 // startup, so editing server.js requires a restart to take effect).
-const WEB_VERSION = 2;
+const WEB_VERSION = 3;
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const PLAYERS_FILE = path.join(DATA_DIR, 'players.json');
 const MATCHES_FILE = path.join(DATA_DIR, 'matches.json');
+const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const PORT = process.env.PORT || 3000;
 
@@ -49,11 +50,28 @@ function verifyPassword(password, hashHex, saltHex) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-// In-memory session tokens → whatsappId. Restarts clear sessions (managers
-// just log in again). Good enough for a self-hosted single-owner tool.
+// Session tokens → whatsappId. Persisted to disk so a backend restart does NOT
+// log managers out (they just keep using their existing token).
 const sessions = new Map();
 // Active penalty shootouts keyed by token.
 const penaltySessions = new Map();
+// In-progress high/low games keyed by token (two-step: start then guess).
+const highlowSessions = new Map();
+
+function loadSessions() {
+  try {
+    const raw = fs.readFileSync(SESSIONS_FILE, 'utf8');
+    const obj = raw.trim() ? JSON.parse(raw) : {};
+    for (const [token, id] of Object.entries(obj)) sessions.set(token, id);
+  } catch {}
+}
+function saveSessions() {
+  try {
+    const obj = Object.fromEntries(sessions.entries());
+    fs.writeFileSync(SESSIONS_FILE, JSON.stringify(obj));
+  } catch {}
+}
+loadSessions();
 
 function playerTotal(p) {
   if (!p || !p.stats) return 0;
@@ -198,7 +216,15 @@ const server = http.createServer(async (req, res) => {
       if (!matched) return send(res, 401, { error: 'Invalid team name or password.' });
       const token = crypto.randomBytes(24).toString('hex');
       sessions.set(token, matched.whatsappId);
+      saveSessions();
       return send(res, 200, { token, user: publicUser(matched) });
+    }
+
+    // ── LOGOUT ──
+    if (p === '/api/logout' && req.method === 'POST') {
+      const { token } = await readBody(req);
+      if (token) { sessions.delete(token); saveSessions(); }
+      return send(res, 200, { ok: true });
     }
 
     // ── ME ──
@@ -452,18 +478,20 @@ const server = http.createServer(async (req, res) => {
       if (!spots().includes(dir)) return send(res, 400, { error: 'Pick a spot: L, C or R.' });
       if (action !== s.phase) return send(res, 400, { error: `Wrong move — it's your turn to ${s.phase}.` });
 
-      let message;
+      let message, last = null;
       if (action === 'shoot') {
         const guess = pick(spots());
         const goal = dir !== guess;
         if (goal) s.playerScore++;
         message = `You shot ${dirText(dir)}, AI dove ${dirText(guess)} → ${goal ? 'GOAL!' : 'SAVED!'}`;
+        last = { type: 'shoot', dir, aiDir: guess, goal };
         s.phase = 'save';
       } else {
         const shot = pick(spots());
         const saved = dir === shot;
         if (!saved) s.aiScore++;
         message = `AI shot ${dirText(shot)}, you guessed ${dirText(dir)} → ${saved ? 'GREAT SAVE!' : 'CONCEDED'}`;
+        last = { type: 'save', dir, aiDir: shot, saved };
         if (s.round >= PENALTY.ROUNDS) {
           // finish
           s.finished = true;
@@ -486,13 +514,14 @@ const server = http.createServer(async (req, res) => {
             result: s.result,
             payout,
             user: publicUser(db.findById('users', id)),
+            last,
             ...penaltyState(s),
           });
         }
         s.round++;
         s.phase = 'shoot';
       }
-      return send(res, 200, { ok: true, message, ...penaltyState(s) });
+      return send(res, 200, { ok: true, message, last, ...penaltyState(s) });
     }
 
     // ── COINFLIP ──
@@ -539,13 +568,11 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true, reels, mult, label, net, currency: db.findById('users', id).currency, user: publicUser(db.findById('users', id)) });
     }
 
-    // ── HIGH / LOW ──
-    if (p === '/api/highlow' && req.method === 'POST') {
+    // ── HIGH / LOW (two-step: start reveals the number, then guess) ──
+    if (p === '/api/highlow/start' && req.method === 'POST') {
       const body = await readBody(req);
       const id = authenticate(body.token);
       if (!id) return send(res, 401, { error: 'Not logged in.' });
-      const dir = String(body.dir || '').toLowerCase();
-      if (dir !== 'higher' && dir !== 'lower') return send(res, 400, { error: 'Use "higher" or "lower".' });
       let stake = parseInt(body.stake, 10);
       if (!stake || isNaN(stake)) stake = HIGHLOW.MIN_STAKE;
       stake = Math.max(HIGHLOW.MIN_STAKE, Math.min(HIGHLOW.MAX_STAKE, stake));
@@ -553,6 +580,25 @@ const server = http.createServer(async (req, res) => {
       const u = db.findById('users', id);
       if ((u.currency || 0) < stake) return send(res, 400, { error: `Need ${stake} Metaworks to play.` });
       const first = randInt(1, 9);
+      highlowSessions.set(body.token, { first, stake });
+      return send(res, 200, {
+        ok: true,
+        first,
+        stake,
+        message: `Number is ${first}. Will the next be HIGHER or LOWER?`,
+      });
+    }
+
+    if (p === '/api/highlow/guess' && req.method === 'POST') {
+      const body = await readBody(req);
+      const id = authenticate(body.token);
+      if (!id) return send(res, 401, { error: 'Not logged in.' });
+      const pending = highlowSessions.get(body.token);
+      if (!pending) return send(res, 400, { error: 'No game in progress. Start one first.' });
+      highlowSessions.delete(body.token);
+      const { first, stake } = pending;
+      const dir = String(body.dir || '').toLowerCase();
+      if (dir !== 'higher' && dir !== 'lower') return send(res, 400, { error: 'Use "higher" or "lower".' });
       if (first === 1 && dir === 'lower') return send(res, 400, { error: `Number is 1 — only HIGHER is possible.` });
       if (first === 9 && dir === 'higher') return send(res, 400, { error: `Number is 9 — only LOWER is possible.` });
       const winProb = dir === 'higher' ? (9 - first) / 9 : (first - 1) / 9;
@@ -562,7 +608,8 @@ const server = http.createServer(async (req, res) => {
       if (next === first) { outcome = 'tie'; net = 0; label = 'SAME NUMBER! Stake returned.'; }
       else if ((dir === 'higher' && next > first) || (dir === 'lower' && next < first)) { outcome = 'win'; net = Math.round(stake * mult) - stake; label = `You called ${dir.toUpperCase()}!`; }
       else { outcome = 'lose'; net = -stake; label = `Wrong! It was ${dir === 'higher' ? 'LOWER' : 'HIGHER'}.`; }
-      User.update(id, { currency: (u.currency || 0) + net });
+      reload();
+      User.update(id, { currency: (db.findById('users', id).currency || 0) + net });
       reload();
       return send(res, 200, { ok: true, first, next, dir, mult: +mult.toFixed(2), outcome, net, currency: db.findById('users', id).currency, user: publicUser(db.findById('users', id)) });
     }

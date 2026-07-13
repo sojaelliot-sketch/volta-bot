@@ -4,6 +4,7 @@ const { sendText } = require('../utils/messaging');
 const { MODERATION } = require('../config/constants');
 const { grantStarterSquad } = require('../utils/playerGenerator');
 const { isChatLocked, getActivePvPForUser } = require('../game-engine/matchSession');
+const { isEnabled: botEnabled } = require('./botstate');
 
 const PREFIX = '!';
 
@@ -19,6 +20,7 @@ const handlers = {
   condition: () => require('./squad'),
   card: () => require('./squad'),
   play: () => require('./match'),
+  match: () => require('./match'),
   challenge: () => require('./match'),
   accept: () => require('./match'),
   sub: () => require('./match'),
@@ -68,14 +70,21 @@ const handlers = {
   join: () => require('./staff'),
   leaderboard: () => require('./leaderboard'),
   lb: () => require('./leaderboard'),
+  top10: () => require('./leaderboard'),
   playerlb: () => require('./playerlb'),
   plb: () => require('./playerlb'),
+  invite: () => require('./invite'),
+  flex: () => require('./squad'),
+  boostall: () => require('./shop'),
+  surgery: () => require('./shop'),
   tutorial: () => require('./tutorial'),
   tut: () => require('./tutorial'),
   setname: () => require('./profile'),
   name: () => require('./profile'),
   password: () => require('./password'),
   setpass: () => require('./password'),
+  on: () => require('./botstate'),
+  off: () => require('./botstate'),
   reload: () => require('./reload'),
   explain: () => require('./explain'),
   guide: () => require('./explain'),
@@ -89,7 +98,7 @@ const handlers = {
   mods: () => require('./mod'),
 };
 
-const PUBLIC_COMMANDS = new Set(['start', 'register', 'help', 'menu']);
+const PUBLIC_COMMANDS = new Set(['start', 'register', 'help', 'menu', 'top10', 'leaderboard', 'lb', 'invite']);
 
 // ─── spam / cooldown tracking ───────────────────────────────────────────────
 const lastCommandAt = new Map();   // sender -> timestamp
@@ -154,6 +163,14 @@ async function handle(sock, msg) {
 
     const [rawCmd, ...args] = text.slice(PREFIX.length).trim().split(/\s+/);
     const cmd = rawCmd.toLowerCase();
+
+    // ── global on/off gate ──
+    // When the bot is OFF, only the owner may act, and the only command that
+    // works for everyone is !on (to switch it back on).
+    if (!botEnabled() && cmd !== 'on' && !User.isOwner(sender)) {
+      await sendText(sock, jid, '🔴 The bot is currently OFF. Only the owner can switch it back on with *!on*.', msg);
+      return;
+    }
 
     // ── reply / mention target resolution ──
     // A command can target another user by: replying to their message,

@@ -72,6 +72,29 @@ async function handle({ sock, msg, jid, sender, cmd, args, replyTo, mentioned })
     return;
   }
 
+  if (cmd === 'match') {
+    const user = User.getByWhatsappId(sender);
+    if (!user || !user.registered) {
+      await sendText(sock, jid, '❌ You need to register first! Type *!start*.', msg);
+      return;
+    }
+    const wait = matchCooldownLeft(sender);
+    if (wait > 0) {
+      await sendText(sock, jid, `⏳ Match cooldown — you can *!match* again in *${Math.ceil(wait / 1000)}s*.`, msg);
+      return;
+    }
+    lastPlayAt.set(sender, Date.now());
+
+    const difficulty = args[0] && ['easy', 'medium', 'hard'].includes(args[0].toLowerCase())
+      ? args[0].charAt(0).toUpperCase() + args[0].slice(1).toLowerCase()
+      : 'Medium';
+
+    await sendText(sock, jid,
+      `🔒 *PRIVATE MATCH* vs ${difficulty} AI starting… the chat is locked to you until full time so nobody else can fire commands. 🤫`, msg);
+    await startMatch(sock, sender, 'AI', { aiDifficulty: difficulty, chatJid: jid, private: true });
+    return;
+  }
+
   if (cmd === 'challenge') {
     const myUser = User.getByWhatsappId(sender);
     if (!myUser || !myUser.registered) {

@@ -4,9 +4,10 @@ const { BRAND } = require('../config/constants');
 const MENU = `⚽ *VOLTA* — ${BRAND}
 ━━━━━━━━━━━━━━━━━━━━━━━
 
-*🚀 START*
+ *🚀 START*
 !start — ✨ Begin
-!register [name] — 📝 Profile + free pack
+!register [name] [code] — 📝 Profile + free pack (+referral bonus)
+!invite — 📨 Get your invite code & earn Metaworks
 !help / !menu — 📖 This menu
 
 *🌐 WEB MANAGER*
@@ -20,13 +21,15 @@ const MENU = `⚽ *VOLTA* — ${BRAND}
 *⚔️ MATCHES*
 !play — 🆚 vs Medium AI
 !play easy / hard — 🟢 / 🔴
+!match [easy|medium|hard] — 🔒 Private AI match (locks the chat)
 !challenge @user — 🥊 PvP duel
 !accept — ✅ Accept
 !sub [outId] [inId] — 🔁 Sub (during PvP pause)
 
-*👥 SQUAD*
+ *👥 SQUAD*
 !squad — 📋 Team
-!card [id] — 🃏 Player card (shows the ID)
+!card [id] — 🃏 Player card (image + shows the ID)
+!flex — 🔥 Flex your Starting XI
 !condition — 🩺 Fitness
 !autosquad / !best — 🤖 Auto best XI + GK
 !swap [id1] [id2] — 🔄 Swap
@@ -45,10 +48,12 @@ const MENU = `⚽ *VOLTA* — ${BRAND}
 !daily — 📅 Daily
 !streak — 🔥 Streak
 
-*🛍️ SHOP & MARKET*
+ *🛍️ SHOP & MARKET*
 !shop — 🏪 Store
 !pack starter | pro | elite — 📦 Packs
 !boost energy|form [id] — ⚡🔥
+!boostall — 💪 Boost energy+form for your whole squad
+!surgery — 🚑 Instant-heal an injured player (limited/day)
 !train [id] / !train elite [id] — 🏋️
 !market [page] — 📊 Listings
 !buy [id] / !list [id] [price] — 🛒💰
@@ -59,13 +64,15 @@ const MENU = `⚽ *VOLTA* — ${BRAND}
 !warn / !kick [id] — ⚠️ (Mod+)
 !ban / !unban [id] — ⛔ (Officer+)
 !auction start [id|auto] [min] — 🔨 (Officer+)
-!bid [amount] — 💎 (Mod+)
+!bid [amount] — 💎 (any registered manager)
 !giveaway [amt] [winners] — 🎉 (Mod+)
 !tournament start classic|penalty [prize] — 🏆 (Mod+)
 !join — 🎮 Enter tournament
 !tourneyplay — ⚔️ Play your tournament tie
 !penalty [bet] — 🥅 Penalty shootout (vs AI or @user)
 !leaderboard / !lb [mmr|wins|goals|rich|winrate] — 📊 Ranks
+!top10 — 🌍 Public top-10 managers (anyone can peek)
+!playerlb / !plb [ovr|goals|motm|value] — 🏆 Player leaderboard
 !tutorial — 🍼 Explains everything (like you're 5)
 
 ━━━━━━━━━━━━━━━━━━━━━━

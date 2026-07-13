@@ -6,8 +6,8 @@ const comm    = require('./commentary');
 const ai      = require('../ai/aiOpponent');
 const tourney = require('./tournament');
 const situ    = require('./situations');
-const { MATCH, ECONOMY, MMR, BRAND } = require('../config/constants');
-const { pick, clamp } = require('../utils/random');
+const { MATCH, ECONOMY, MMR, BRAND, INJURY } = require('../config/constants');
+const { pick, clamp, randInt } = require('../utils/random');
 const { sleep, sendText } = require('../utils/messaging');
 const logger  = require('../utils/logger');
 const db      = require('../config/database');
@@ -55,6 +55,16 @@ function squadStrength(squad) {
   }, 0);
 }
 
+// Small random chance a player picks up an injury during a match. Returns the
+// injury info (hours + ISO until) or null. Sets injuredUntil on the player.
+function rollInjury(player) {
+  if (!player || player.injuredUntil) return null;
+  const hours = randInt(INJURY.MIN_HOURS, INJURY.MAX_HOURS);
+  const until = new Date(Date.now() + hours * 3600 * 1000).toISOString();
+  Player.update(player.id, { injuredUntil: until });
+  return { until, hours };
+}
+
 // Build the 3 outfield + 1 keeper match squad for a user.
 function assembleMatchSquad(user) {
   const outfield = user.startingXI
@@ -78,6 +88,13 @@ function assembleMatchSquad(user) {
     ...outfield.slice(0, MATCH.OUTFIELD_PER_SIDE).map(p => ({ ...p, fielded: true })),
     { ...keeper, fielded: true },
   ];
+
+  const injured = squad.filter(p => p.injuredUntil && new Date(p.injuredUntil).getTime() > Date.now());
+  if (injured.length) {
+    const names = injured.map(p => Player.displayName(p)).join(', ');
+    return { error: `🚑 These players are injured: ${names}.\nHeal them with *!surgery [id]* or *!swap* in a fit player, then try again.` };
+  }
+
   return { squad };
 }
 
@@ -175,7 +192,7 @@ async function startMatch(sock, homeId, awayId = 'AI', options = {}) {
 
   if (isAI) {
     awaySquad = ai.generateAISquad(aiDifficulty);
-    awayName  = `AI (${aiDifficulty})`;
+    awayName  = ai.randomClub();
   } else {
     const awayUser = User.getByWhatsappId(awayId);
     if (!awayUser || !awayUser.registered) {
@@ -222,6 +239,7 @@ async function startMatch(sock, homeId, awayId = 'AI', options = {}) {
     session.totalChances = MATCH.PVP_CHANCES;
     session.timer = null;
     session.goalScorers = [];
+    session.scorerStats = {};   // id -> { goals, shots, name, team }
     pvpChances.set(matchId, session);
     User.update(homeId, { inMatch: true, currentMatchId: matchId });
     User.update(awayId, { inMatch: true, currentMatchId: matchId });
@@ -236,6 +254,12 @@ async function startMatch(sock, homeId, awayId = 'AI', options = {}) {
 
   activeSessions.set(matchId, session);
   User.update(homeId, { inMatch: true, currentMatchId: matchId });
+
+  // Private match (e.g. !match): lock the chat to just the manager so nobody
+  // else in a group can fire commands while it runs.
+  if (options.private) {
+    lockedChats.set(chatJid, { matchId, participants: [homeId] });
+  }
 
   try {
     await sock.sendPresenceUpdate('composing', chatJid);
@@ -375,6 +399,11 @@ async function presentChance(s) {
     bi++;
   }
 
+  // One Gen Z connective line after the buildup to keep the vibe flowing.
+  const genCat = isDefend ? 'DEFENSE' : 'BUILDUP';
+  await broadcast(s, comm.genZFlow(genCat, ctx));
+  await sleep(MATCH.PVP_BUILDUP_DELAY_MS);
+
   const optText = sit.options.map(o => `!${o.key} ${o.label}`).join('   ');
   if (isDefend) {
     await broadcast(s,
@@ -449,6 +478,13 @@ async function resolveChance(s, sender, raw) {
   const player   = pick(outfield.length ? outfield : atkSquad);
   const ctx      = { player: Player.displayName(player) || player.name, team: atkName, opp: defName };
 
+  // Advance the clock and track this attacker's contribution for the MVP vote.
+  s.timeElapsed = Math.min(s.timeElapsed + engine.eventDuration('shoot'), MATCH.TOTAL_SECONDS);
+  const fm = engine.toFootballMinute(s.timeElapsed);
+  const sid = player.id;
+  s.scorerStats[sid] = s.scorerStats[sid] || { goals: 0, shots: 0, name: Player.displayName(player) || player.name, team: attackerSide };
+  s.scorerStats[sid].shots++;
+
   let line;
 
   if (s.currentType === 'defend') {
@@ -476,6 +512,8 @@ async function resolveChance(s, sender, raw) {
 
     if (isGoal) {
       if (attackerSide === 'home') s.homeScore++; else s.awayScore++;
+      s.scorerStats[sid].goals++;
+      s.goalScorers.push({ player: Player.displayName(player) || player.name, minute: fm, team: attackerSide, id: player.id });
       s[`${attackerSide}Momentum`] = engine.updateMomentum(s[`${attackerSide}Momentum`], 'GOAL');
       s[`${defenderSide}Momentum`] = engine.updateMomentum(s[`${defenderSide}Momentum`], 'MISS');
       line = situ.fillPlaceholders(pick(s.currentSituation.goal), ctx);
@@ -493,7 +531,17 @@ async function resolveChance(s, sender, raw) {
     }
   }
 
-  await broadcast(s, `${s.homeName} ${s.homeScore}–${s.awayScore} ${s.awayName}\n${line}`.trim());
+  const hype = isGoal ? `\n${comm.genZFlow('HYPE', { team: atkName })}` : '';
+  await broadcast(s, `${s.homeName} ${s.homeScore}–${s.awayScore} ${s.awayName}\n${line}${hype}`.trim());
+
+  // Injury roll in interactive play.
+  if (Math.random() < INJURY.CHANCE_PER_CHANCE) {
+    const defSquad = defenderSide === 'home' ? s.homeSquad : s.awaySquad;
+    const defPlayer = pick(defSquad.filter(p => p.role === 'outfield')) || null;
+    const victim = Math.random() < 0.5 ? player : defPlayer;
+    const inj = rollInjury(victim);
+    if (inj) await broadcast(s, `🚑 *INJURY!* ${Player.displayName(victim) || victim.name} is hurt — out for ~${inj.hours}h! 😣`);
+  }
 
   s.phase = 'idle';
   s.currentSituation = null;
@@ -554,10 +602,65 @@ async function finishPvP(s) {
 
   tourney.resolveByResult(s.homeId, s.awayId, winnerId);
 
-  await broadcast(s,
-    `🏁 *FULL TIME!* ${s.homeName} ${s.homeScore}–${s.awayScore} ${s.awayName}\n` +
-    `💲 +${homeReward} (${s.homeName}) | +${awayReward} (${s.awayName})\n` +
-    (homeWon ? `🏆 ${s.homeName} wins!` : (winnerId === s.awayId ? `🏆 ${s.awayName} wins!` : `🤝 Draw!`)));
+  // ── MVP: top scorer, tie-broken by total involvement ──
+  const statEntries = Object.entries(s.scorerStats || {});
+  let mvp = null;
+  if (statEntries.length) {
+    statEntries.sort((a, b) => (b[1].goals - a[1].goals) || (b[1].shots - a[1].shots));
+    mvp = statEntries[0][1];
+  }
+
+  let mvpBonus = 0;
+  if (mvp && mvp.team) {
+    const mvpOwner = mvp.team === 'home' ? s.homeId : s.awayId;
+    mvpBonus = ECONOMY.MVP_BONUS;
+    const mu = User.getByWhatsappId(mvpOwner) || {};
+    User.update(mvpOwner, { currency: (mu.currency || 0) + mvpBonus });
+    if (mvp.id && Player.getById(mvp.id)) {
+      Player.update(mvp.id, { manOfTheMatch: (Player.getById(mvp.id).manOfTheMatch || 0) + 1 });
+    }
+  }
+
+  // ── match timeline: every goal stamped with its football minute ──
+  const teamNameOf = (t) => (t === 'home' ? s.homeName : s.awayName);
+  const timeline = [...(s.goalScorers || [])]
+    .sort((a, b) => (a.minute || 0) - (b.minute || 0))
+    .map((g) => `⚽ ${g.minute}'  ${teamNameOf(g.team)} — ${g.player}`)
+    .join('\n');
+
+  const resultTxt = homeWon ? `🏆 ${s.homeName} wins!` : (winnerId === s.awayId ? `🏆 ${s.awayName} wins!` : `🤝 Draw!`);
+
+  let report = `━━━━━━━━━━━━━━━━━━━━━━━\n🏟️ *FULL TIME — VOLTA*\n━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  report += `🏠 *${s.homeName}*  ${s.homeScore} – ${s.awayScore}  *${s.awayName}* 🚗\n━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+  report += timeline
+    ? `📋 *MATCH LOG*\n${timeline}\n`
+    : `📋 *MATCH LOG*\nNo goals — a cagey ${s.homeScore}–${s.awayScore} draw.\n`;
+  report += `\n💲 +${homeReward} (${s.homeName}) | +${awayReward} (${s.awayName})\n`;
+  if (mvp) report += `⭐ MVP: *${mvp.name}*${mvpBonus ? ` (+${mvpBonus})` : ''}\n`;
+  report += `${resultTxt}\n━━━━━━━━━━━━━━━━━━━━━━━\n${BRAND}`;
+
+  await broadcast(s, report);
+
+  // ── persist a match record for the web-app history view ──
+  try {
+    const matchRecord = {
+      id: `m_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+      date: new Date().toISOString(),
+      homeId: s.homeId, awayId: s.awayId, homeName: s.homeName, awayName: s.awayName,
+      homeScore: s.homeScore, awayScore: s.awayScore,
+      result: homeWon ? 'W' : (winnerId === s.awayId ? 'L' : 'D'),
+      mvp: mvp && mvp.id ? { id: mvp.id, name: mvp.name } : null,
+      goalScorers: (s.goalScorers || []).map((g) => ({ minute: g.minute, player: g.player, team: g.team })),
+      pvp: true,
+    };
+    db.insert('matches', matchRecord.id, matchRecord);
+  } catch (err) {
+    logger.error({ err }, 'Failed to record PvP match history');
+  }
+
+  await decayConditions(s.homeSquad);
+  await decayConditions(s.awaySquad);
+
   lockedChats.delete(s.chatJid);
 }
 
@@ -635,6 +738,21 @@ function simulateChunk(session, count) {
     }
 
     lines.push(...comm.buildBurst(eventType, { player: attacker.displayName || attacker.name, team }, session.timeElapsed));
+
+    // Injury roll — a player can go down at any moment.
+    if (Math.random() < INJURY.CHANCE_PER_EVENT) {
+      const victim = Math.random() < 0.5 ? attacker : pick(defenders.length ? defenders : [attacker]);
+      const inj = rollInjury(victim);
+      if (inj) lines.push(`🚑 *INJURY!* ${Player.displayName(victim) || victim.name} goes down — out for ~${inj.hours}h! 😣`);
+    }
+
+    // Gen Z connective tissue between events — a hype/atmosphere beat that
+    // never repeats within the match.
+    if (isGoal) {
+      lines.push(comm.genZFlow('HYPE', { team }));
+    } else if (Math.random() < 0.35) {
+      lines.push(comm.genZFlow(Math.random() < 0.5 ? 'BUILDUP' : 'PRESSURE', { team, player: attacker.displayName || attacker.name }));
+    }
   }
 
   return { lines, scorers };

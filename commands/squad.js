@@ -3,6 +3,8 @@ const Player = require('../models/Player');
 const { RARITY, SQUAD, SHOP, GK_POSITIONS } = require('../config/constants');
 const { money, bar, formEmoji, conditionEmoji } = require('../utils/formatter');
 const { sendText } = require('../utils/messaging');
+const logger = require('../utils/logger');
+const cardRenderer = require('../utils/cardRenderer');
 
 function shortId(id) {
   return id.slice(0, 6);
@@ -72,12 +74,40 @@ async function cmdSquad({ sock, msg, jid, sender, user }) {
     text += reserves.map((p) => squadRow(p, '  ')).join('\n');
   }
 
-  text += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━
+   text += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━
 💡 *!card [id]* — Full player card
 💡 *!bench [id]* — Move to bench
 💡 *!rename [id] [name]* — Custom name`;
 
   await sendText(sock, jid, text, msg);
+}
+
+async function cmdFlex({ sock, msg, jid, sender, user }) {
+  const owned = Player.getByOwner(sender);
+  const byId = Object.fromEntries(owned.map((p) => [p.id, p]));
+  const xi = user.startingXI.map((id) => byId[id]).filter(Boolean);
+  if (!xi.length) {
+    await sendText(sock, jid, `❌ No Starting XI to flex. Open a pack with *!shop* first!`, msg);
+    return;
+  }
+  const ovr = xi.reduce((s, p) => s + Player.totalStats(p), 0);
+  const top = owned.slice().sort((a, b) => Player.totalStats(b) - Player.totalStats(a))[0];
+  const topEmoji = RARITY[top.rarity]?.emoji || '⚪';
+
+  let block = `🧢 *${user.name}* — VOLTA SQUAD FLEX 🔥
+━━━━━━━━━━━━━━━━━━━━━━
+⭐ Squad OVR: ${ovr}
+🏆 MMR ${user.mmr} (${user.rank}) · ${user.wins}W ${user.losses}L ${user.draws}D
+`;
+  xi.forEach((p, i) => {
+    const r = RARITY[p.rarity]?.emoji || '⚪';
+    block += `${i + 1}. ${r} ${Player.displayName(p)} (${p.rarity}) — ${Player.totalStats(p)} OVR\n`;
+  });
+  block += `━━━━━━━━━━━━━━━━━━━━━━
+🏆 Top player: ${topEmoji} ${Player.displayName(top)} (${top.rarity})
+💪 Think you can beat my squad? Join VOLTA with *!invite*! 🔥`;
+
+  await sendText(sock, jid, block, msg);
 }
 
 async function cmdCard({ sock, msg, jid, sender, args }) {
@@ -116,7 +146,15 @@ async function cmdCard({ sock, msg, jid, sender, args }) {
     `🆔 ID: \`${p.id.slice(0, 6)}\`  (use this in *!train / !boost / !list / !swap / !bench*)\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━`;
 
-  await sendText(sock, jid, text, msg);
+   await sendText(sock, jid, text, msg);
+
+  // Render the visual FUT-style card image and send it too.
+  try {
+    const buf = cardRenderer.renderPlayerCard(p);
+    await sock.sendMessage(jid, { image: buf, caption: `🃏 ${Player.displayName(p)} — ${p.rarity} card` }, { quoted: msg });
+  } catch (err) {
+    logger.error({ err }, 'card image render failed');
+  }
 }
 
 async function cmdCondition({ sock, msg, jid, sender }) {
@@ -194,6 +232,7 @@ async function handle(ctx) {
   const { cmd } = ctx;
   if (cmd === 'squad' || cmd === 'lineup') return cmdSquad(ctx);
   if (cmd === 'card') return cmdCard(ctx);
+  if (cmd === 'flex') return cmdFlex(ctx);
   if (cmd === 'condition') return cmdCondition(ctx);
   if (cmd === 'bench') return cmdBench(ctx);
   if (cmd === 'rename') return cmdRename(ctx);

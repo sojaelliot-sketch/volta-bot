@@ -1,6 +1,26 @@
 const { pick, randInt } = require('../utils/random');
 const { toFootballMinute } = require('./matchEngine');
 const { BRAND } = require('../config/constants');
+const { GEN_Z, fillLine: fillGenZ } = require('./commentaryGenZ');
+
+// Per-process recent-line tracker: keeps the last RECENT_CAP lines so a given
+// match never repeats commentary within its own flow (matches run over a few
+// seconds and a 40-line window comfortably covers one match).
+const recent = new Set();
+const RECENT_CAP = 40;
+
+function remember(lines) {
+  for (const l of lines) if (l) recent.add(l);
+  while (recent.size > RECENT_CAP) {
+    const first = recent.values().next().value;
+    if (first === undefined) break;
+    recent.delete(first);
+  }
+}
+function notRecent(pool, keyFn) {
+  const fresh = pool.filter((item) => !recent.has(keyFn(item)));
+  return fresh.length ? fresh : pool;
+}
 
 const SEQUENCES = {
 
@@ -219,7 +239,9 @@ function buildBurst(eventType, ctx = {}, elapsed = 0) {
   const pool = SEQUENCES[eventType];
   if (!pool) return [`⚽ ${eventType}`];
 
-  const sequence = pick(pool);
+  const keyFn = (seq) => seq.join('|');
+  const sequence = pick(notRecent(pool, keyFn));
+  remember([keyFn(sequence)]);
   const minute   = toFootballMinute(elapsed);
   const prefix   = `⏱️ ${minute}'`;
 
@@ -232,7 +254,19 @@ function buildBurst(eventType, ctx = {}, elapsed = 0) {
 }
 
 function atmosphereLine() {
-  return pick(ATMOSPHERE);
+  const line = pick(notRecent(ATMOSPHERE, (l) => l));
+  remember([line]);
+  return line;
+}
+
+// A single Gen Z connective line (BUILDUP / DEFENSE / PRESSURE / TURNOVER /
+// HYPE), filled with context and tracked against the no-repeat window.
+function genZFlow(category, ctx = {}) {
+  const pool = GEN_Z[category];
+  if (!pool || !pool.length) return '';
+  const line = pick(notRecent(pool, (l) => l));
+  remember([line]);
+  return fillGenZ(line, ctx);
 }
 
 function buildMatchReport({ homeName, awayName, homeScore, awayScore, lines, scorers, brand }) {
@@ -280,6 +314,7 @@ ${scenario}
 module.exports = {
   buildBurst,
   atmosphereLine,
+  genZFlow,
   buildMatchReport,
   decisionPrompt,
 };

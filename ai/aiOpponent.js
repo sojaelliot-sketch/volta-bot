@@ -1,19 +1,32 @@
-const { AI } = require('../config/constants');
+const { AI, CLUBS } = require('../config/constants');
 const { randInt, weightedRandom, pick } = require('../utils/random');
 const { toFootballMinute } = require('../game-engine/matchEngine');
 
-const AI_FIRST = ['Shadow', 'Blaze', 'Storm', 'Ghost', 'Viper', 'Titan', 'Fury', 'Phantom', 'Razor', 'Bolt', 'Steel', 'Nova'];
-const AI_GK    = ['Iron Wall', 'Stone Hands', 'The Vault', 'Block Mode', 'The Fortress'];
+// Plausible real-ish footballer names so AI squads don't read as "Shadow"/"Blaze".
+const FIRST = ['Marcus', 'David', 'Luka', 'Theo', 'Emre', 'Niko', 'Bruno', 'Kai', 'Idris', 'Rafael', 'Owen', 'Sergi', 'Mateo', 'Yann', 'Tomas', 'Andre', 'Pavel', 'Felix', 'Diego', 'Hugo', 'Leon', 'Samir', 'Conor', 'Pablo', 'Ruben', 'Jonas', 'Milo', 'Viktor', 'Caspar', 'Aiden'];
+const LAST  = ['Vidic', 'Hall', 'Moreau', 'Okafor', 'Lindholm', 'Petrov', 'Castle', 'Marsh', 'Reyes', 'Bauer', 'Nakamura', 'Frost', 'Oduya', 'Vance', 'Cole', 'Sterling', 'Kovac', 'Romano', 'Bjorn', 'Dahl', 'Ferro', 'Hart', 'Lowe', 'Maddox', 'Quinn', 'Solano', 'Vasquez', 'Wren', 'Yates', 'Zoric'];
+const GK_FIRST = ['Manuel', 'Tomas', 'Oscar', 'Boris', 'Kepa'];
+const GK_LAST  = ['Banks', 'Schmeichel', 'Zoff', 'Cech', 'Trafford'];
+
+function randomName(isGK) {
+  const f = isGK ? pick(GK_FIRST) : pick(FIRST);
+  const l = isGK ? pick(GK_LAST) : pick(LAST);
+  return `${f} ${l}`;
+}
+
+function randomClub() {
+  return pick(CLUBS);
+}
 
 function generateAISquad(difficulty = 'Medium') {
   const cfg  = AI[difficulty.toUpperCase()] || AI.MEDIUM;
   const base = cfg.statBase;
   // VOLTA = 3 outfield + 1 keeper, same as a human side.
   return [
-    makeAIPlayer('outfield', base, pick(AI_FIRST), difficulty),
-    makeAIPlayer('outfield', base, pick(AI_FIRST), difficulty),
-    makeAIPlayer('outfield', base, pick(AI_FIRST), difficulty),
-    makeAIPlayer('goalkeeper', base, pick(AI_GK), difficulty),
+    makeAIPlayer('outfield', base, randomName(false), difficulty),
+    makeAIPlayer('outfield', base, randomName(false), difficulty),
+    makeAIPlayer('outfield', base, randomName(false), difficulty),
+    makeAIPlayer('goalkeeper', base, randomName(true), difficulty),
   ];
 }
 
@@ -80,4 +93,4 @@ function predictiveAction(session, team) {
   return statAction(session, team);
 }
 
-module.exports = { generateAISquad, chooseAction };
+module.exports = { generateAISquad, chooseAction, randomClub };
