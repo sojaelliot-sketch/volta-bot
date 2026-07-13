@@ -1,8 +1,19 @@
 const User = require('../models/User');
 const Player = require('../models/Player');
 const { MATCH } = require('../config/constants');
-const { startMatch, getActivePvPForUser, applySub, getPvpSessionFor, resolveChance, forfeitPvPForUser } = require('../game-engine/matchSession');
+const { startMatch, getActivePvPForUser, getActiveMatchForUser, applySub, getPvpSessionFor, resolveChance, forfeitPvPForUser } = require('../game-engine/matchSession');
 const { sendText } = require('../utils/messaging');
+
+// Self-heal: a user can be flagged inMatch from a match that crashed or was
+// cleared while the bot was down. If there's no live session for them, drop the
+// stale flag so they aren't permanently locked out of !play / !challenge.
+function healIfStuck(user) {
+  if (user && user.inMatch && !getActiveMatchForUser(user.whatsappId)) {
+    User.update(user.whatsappId, { inMatch: false, currentMatchId: null });
+    return true;
+  }
+  return false;
+}
 
 // pendingChallenges: targetJid -> { challenger, expires }
 const pendingChallenges = new Map();
@@ -80,6 +91,7 @@ async function handle({ sock, msg, jid, sender, cmd, args, replyTo, mentioned })
       await sendText(sock, jid, '❌ You need to register first! Type *!start*.', msg);
       return;
     }
+    healIfStuck(user);
 
     // ── match cooldown (applies to everyone) ──
     const wait = matchCooldownLeft(sender);
@@ -103,6 +115,7 @@ async function handle({ sock, msg, jid, sender, cmd, args, replyTo, mentioned })
       await sendText(sock, jid, '❌ You need to register first! Type *!start*.', msg);
       return;
     }
+    healIfStuck(user);
     const wait = matchCooldownLeft(sender);
     if (wait > 0) {
       await sendText(sock, jid, `⏳ Match cooldown — you can *!match* again in *${Math.ceil(wait / 1000)}s*.`, msg);
@@ -115,8 +128,9 @@ async function handle({ sock, msg, jid, sender, cmd, args, replyTo, mentioned })
       : 'Medium';
 
     await sendText(sock, jid,
-      `🔒 *PRIVATE MATCH* vs ${difficulty} AI starting… the chat is locked to you until full time so nobody else can fire commands. 🤫`, msg);
-    await startMatch(sock, sender, 'AI', { aiDifficulty: difficulty, chatJid: jid, private: true });
+      `🔒 *PRIVATE MATCH* vs ${difficulty} AI starting… the chat is locked to you until full time so nobody else can fire commands. 🤫\n` +
+      `🎮 It's interactive: react with *!a / !b / !c* on your turns, and the AI plays its own turns automatically. 🔥`, msg);
+    await startMatch(sock, sender, 'AI', { aiDifficulty: difficulty, chatJid: jid, interactiveAI: true });
     return;
   }
 
@@ -126,6 +140,7 @@ async function handle({ sock, msg, jid, sender, cmd, args, replyTo, mentioned })
       await sendText(sock, jid, '❌ You need to register first! Type *!start*.', msg);
       return;
     }
+    healIfStuck(myUser);
     // ── match cooldown (applies to everyone) ──
     const wait = matchCooldownLeft(sender);
     if (wait > 0) {
@@ -185,6 +200,8 @@ async function handle({ sock, msg, jid, sender, cmd, args, replyTo, mentioned })
       await sendText(sock, jid, `❌ You need to register first! Type *!start*.`, msg);
       return;
     }
+    healIfStuck(myUser);
+    healIfStuck(chUser);
     if (!chUser || !chUser.registered || chUser.inMatch || myUser.inMatch) {
       await sendText(sock, jid, `❌ Your challenger is no longer available (registered/in a match).`, msg);
       return;

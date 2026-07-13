@@ -9,12 +9,13 @@ async function handle({ sock, msg, jid, sender, user }) {
     await sendText(sock, jid, `⛔ *!clearpvp* is owner/staff only.`, msg);
     return;
   }
-  const cleared = matchSession.clearAllPvP();
+  const res = matchSession.clearAllPvP();
   await sendText(sock, jid,
     `🧹 *PvP MATCHES CLEARED*\n` +
-    `━━━━━━━━━━━━━━━━\n` +
-    `Cleared ${cleared} active PvP match(es), all interactive chances, and the chat locks they held.\n` +
-    `Players can now start fresh matches. 🆚`, msg);
+    `━━━━━━━━━━━━━━\n` +
+    `Cleared ${res.cleared} in-memory match(es) + all interactive chances and chat locks.\n` +
+    `Healed ${res.healed} player(s) who were stuck *in match*.\n` +
+    `Everyone can now start fresh matches. 🆚`, msg);
 }
 
 module.exports = { handle };

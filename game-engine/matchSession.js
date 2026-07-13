@@ -41,7 +41,15 @@ function isChatLocked(chatJid, sender) {
 
 function getActivePvPForUser(sender) {
   for (const [, s] of activeSessions) {
-    if (s.isPvP && (s.homeId === sender || s.awayId === sender)) return s;
+    if ((s.isPvP || s.isInteractiveAI) && (s.homeId === sender || s.awayId === sender)) return s;
+  }
+  return null;
+}
+
+// Any live match (PvP or AI) the user is part of, or null.
+function getActiveMatchForUser(sender) {
+  for (const [, s] of activeSessions) {
+    if (s.homeId === sender || s.awayId === sender) return s;
   }
   return null;
 }
@@ -168,7 +176,7 @@ function applySub(session, sender, args) {
 }
 
 async function startMatch(sock, homeId, awayId = 'AI', options = {}) {
-  const { aiDifficulty = 'Medium', chatJid = homeId, isPvP = false } = options;
+  const { aiDifficulty = 'Medium', chatJid = homeId, isPvP = false, interactiveAI = false } = options;
   const isAI = awayId === 'AI' && !isPvP;
 
   const homeUser = User.getByWhatsappId(homeId);
@@ -232,21 +240,31 @@ async function startMatch(sock, homeId, awayId = 'AI', options = {}) {
     lastMsg: options.msg || null,
   };
 
-  if (isPvP) {
-    // Interactive PvP: a series of chances the two managers react to live.
+  // Interactive matches: PvP (two humans) or vs-AI (human home + AI away that
+  // auto-responds on its turn). Both use the live !a/!b/!c chance loop.
+  if (isPvP || interactiveAI) {
     session.phase = 'idle';
     session.chanceNo = 0;
     session.totalChances = MATCH.PVP_CHANCES;
     session.timer = null;
     session.goalScorers = [];
     session.scorerStats = {};   // id -> { goals, shots, name, team }
+    session.isInteractiveAI = !!interactiveAI;
     pvpChances.set(matchId, session);
+    activeSessions.set(matchId, session); // so !forfeit / !sub can find it
     User.update(homeId, { inMatch: true, currentMatchId: matchId });
-    User.update(awayId, { inMatch: true, currentMatchId: matchId });
-    lockedChats.set(chatJid, { matchId, participants: [homeId, awayId] });
+    if (isPvP) User.update(awayId, { inMatch: true, currentMatchId: matchId });
 
-    await sendText(sock, awayId,
-      `🥊 *MATCH ON!* vs *${homeName}*\nWhen it's *your* turn you'll get a chance with options like *!a / !b / !c*. React fast — 90s or you forfeit! 🔥`);
+    const participants = isPvP ? [homeId, awayId] : [homeId];
+    lockedChats.set(chatJid, { matchId, participants });
+
+    if (isPvP) {
+      await sendText(sock, awayId,
+        `🥊 *MATCH ON!* vs *${homeName}*\nWhen it's *your* turn you'll get a chance with options like *!a / !b / !c*. React fast — 90s or you forfeit! 🔥`);
+    } else {
+      await sendText(sock, chatJid,
+        `🤖 *MATCH ON vs ${awayName}!*\nReact with *!a / !b / !c* when it's YOUR turn. The AI takes its own turns automatically — watch the buildup! 🔥`);
+    }
 
     nextChance(session);
     return session;
@@ -405,6 +423,21 @@ async function presentChance(s) {
   await sleep(MATCH.PVP_BUILDUP_DELAY_MS);
 
   const optText = sit.options.map(o => `!${o.key} ${o.label}`).join('   ');
+
+  // ── AI auto-response (interactive vs-AI match) ──
+  // When it's the AI's turn, show the options for context and let it pick
+  // automatically after a short beat — the human just watches the buildup.
+  if (s.isInteractiveAI && s.responder === 'away') {
+    await broadcast(s,
+      `🤖 *${atkName}* size up the chance…\n` +
+      `👉 Options: ${optText}\n` +
+      `⏳ The AI is deciding…`);
+    const choice = pickAiOption(sit.options);
+    clearPvpTimer(s);
+    armAiTurn(s, choice.key);
+    return;
+  }
+
   if (isDefend) {
     await broadcast(s,
       `🛡️ *YOUR TURN — ${defName}!*\n` +
@@ -420,6 +453,26 @@ async function presentChance(s) {
   }
 
   armForfeit(s, s.responder);
+}
+
+// Weighted auto-pick for the AI in an interactive vs-AI match. Higher gw = the
+// AI favours the "better" option, with some randomness so it's not robotic.
+function pickAiOption(options) {
+  const opts = (options || []).filter(o => o && typeof o.gw === 'number');
+  if (!opts.length) return (options || [])[0];
+  const total = opts.reduce((sum, o) => sum + o.gw, 0);
+  let r = Math.random() * total;
+  for (const o of opts) { r -= o.gw; if (r <= 0) return o; }
+  return opts[opts.length - 1];
+}
+
+// Arm the AI's automatic reaction timer (no forfeit — the AI always replies).
+function armAiTurn(s, key) {
+  clearPvpTimer(s);
+  s.timer = setTimeout(() => {
+    if (!pvpChances.get(s.matchId)) return;
+    resolveChance(s, s.awayId, key);
+  }, MATCH.PVP_AI_REACT_MS);
 }
 
 async function nextChance(s) {
@@ -486,6 +539,7 @@ async function resolveChance(s, sender, raw) {
   s.scorerStats[sid].shots++;
 
   let line;
+  let isGoal = false;
 
   if (s.currentType === 'defend') {
     // Defensive duel: the responder (defender) tries to win the ball.
@@ -508,7 +562,7 @@ async function resolveChance(s, sender, raw) {
     const ap = (atkStr / 4) * opt.gw * 0.5;
     const dp = (defStr / 4) * 0.5 + 20;
     const goalP = 1 / (1 + Math.exp(-((ap - dp) / 60)));
-    const isGoal = Math.random() < goalP;
+    isGoal = Math.random() < goalP;
 
     if (isGoal) {
       if (attackerSide === 'home') s.homeScore++; else s.awayScore++;
@@ -595,25 +649,30 @@ async function finishPvP(s) {
     mmr: (h.mmr || 1000) + homeMmr,
     totalGoals: (h.totalGoals || 0) + s.homeScore,
   });
-  const a = User.getByWhatsappId(s.awayId) || {};
-  User.update(s.awayId, {
-    inMatch: false, currentMatchId: null,
-    currency: (a.currency || 0) + awayReward,
-    wins: (a.wins || 0) + ((winnerId === s.awayId) ? 1 : 0),
-    losses: (a.losses || 0) + ((!homeWon && !isDraw && winnerId !== s.awayId) ? 1 : 0),
-    draws: (a.draws || 0) + (isDraw ? 1 : 0),
-    mmr: (a.mmr || 1000) + awayMmr,
-    totalGoals: (a.totalGoals || 0) + s.awayScore,
-  });
-
+  // Home rank can always change (home is always a real user).
   const hu = User.getByWhatsappId(s.homeId);
-  const newRank = calcRank(hu.mmr);
-  if (newRank !== hu.rank) User.update(s.homeId, { rank: newRank });
-  const au = User.getByWhatsappId(s.awayId);
-  const newRankA = calcRank(au.mmr);
-  if (newRankA !== au.rank) User.update(s.awayId, { rank: newRankA });
+  const newRank = calcRank(hu ? hu.mmr : 1000);
+  if (hu && newRank !== hu.rank) User.update(s.homeId, { rank: newRank });
 
-  tourney.resolveByResult(s.homeId, s.awayId, winnerId);
+  // The away side only gets rewards/rank when it's a real opponent (PvP).
+  // In a vs-AI match awayId is the literal 'AI', so we must not write a fake
+  // user record for it.
+  if (!s.isAI) {
+    const a = User.getByWhatsappId(s.awayId) || {};
+    User.update(s.awayId, {
+      inMatch: false, currentMatchId: null,
+      currency: (a.currency || 0) + awayReward,
+      wins: (a.wins || 0) + ((winnerId === s.awayId) ? 1 : 0),
+      losses: (a.losses || 0) + ((!homeWon && !isDraw && winnerId !== s.awayId) ? 1 : 0),
+      draws: (a.draws || 0) + (isDraw ? 1 : 0),
+      mmr: (a.mmr || 1000) + awayMmr,
+      totalGoals: (a.totalGoals || 0) + s.awayScore,
+    });
+    const au = User.getByWhatsappId(s.awayId);
+    const newRankA = calcRank(au ? au.mmr : 1000);
+    if (au && newRankA !== au.rank) User.update(s.awayId, { rank: newRankA });
+    tourney.resolveByResult(s.homeId, s.awayId, winnerId);
+  }
 
   // ── MVP: top scorer, tie-broken by total involvement ──
   const statEntries = Object.entries(s.scorerStats || {});
@@ -912,22 +971,31 @@ async function decayConditions(squad) {
 // Force-clear every in-progress PvP match + interactive chance session + the
 // chat locks they hold. Used by the owner's !clearpvp recovery command when a
 // PvP game gets stuck (e.g. a player goes offline mid-match and the chat stays
-// locked). Does NOT touch single-player AI matches.
+// locked). Also heals any dangling "inMatch" flags left in the DB — otherwise
+// players stay locked out of !play forever after a crash or a clear-while-down.
 function clearAllPvP() {
   let cleared = 0;
   for (const [id, s] of activeSessions) {
-    if (s && s.isPvP) {
+    if (s && (s.isPvP || s.isInteractiveAI)) {
       clearPvpTimer(s);
       activeSessions.delete(id);
       cleared++;
     }
   }
   pvpChances.clear();
-  for (const [jid, lock] of [...lockedChats]) {
-    // PvP locks carry two participants (home + away); AI locks carry one.
-    if (lock.participants && lock.participants.length === 2) lockedChats.delete(jid);
+  // Any match lock (PvP = 2 participants, vs-AI = 1) belongs to a match we just
+  // cleared, so drop them all to fully release the chats.
+  lockedChats.clear();
+  // Safety net: reset any persisted inMatch flag. If the bot was restarted (or a
+  // match crashed) these would never get cleared by finishPvP, so do it here.
+  let healed = 0;
+  for (const u of User.all()) {
+    if (u.inMatch || u.currentMatchId) {
+      User.update(u.whatsappId, { inMatch: false, currentMatchId: null });
+      healed++;
+    }
   }
-  return cleared;
+  return { cleared, healed };
 }
 
-module.exports = { startMatch, isChatLocked, getActivePvPForUser, applySub, getPvpSessionFor, resolveChance, clearAllPvP, forfeitPvPForUser };
+module.exports = { startMatch, isChatLocked, getActivePvPForUser, getActiveMatchForUser, applySub, getPvpSessionFor, resolveChance, clearAllPvP, forfeitPvPForUser };

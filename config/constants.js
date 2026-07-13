@@ -41,6 +41,7 @@ module.exports = {
     PVP_INTERCEPT_PCT: 0.18,      // chance the defender steals the ball mid-buildup (attacker loses possession)
     PVP_CATCH_PCT: 0.40,          // of non-goal shots, share where the keeper CATCHES (clean claim) vs blocks
     PVP_DEFEND_WEIGHT: 0.5,       // how much a defensive option's gw matters vs attacker strength
+    PVP_AI_REACT_MS: 2000,        // delay before the AI auto-picks in an interactive vs-AI match
   },
 
 

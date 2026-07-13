@@ -22,6 +22,36 @@ const { openPack } = require('../utils/playerGenerator');
 const { PACKS, SHOP, TRAINING, PENALTY, COINFLIP, HIGHLOW, SLOT, RARITY } = require('../config/constants');
 const { randInt, pick, weightedRandom } = require('../utils/random');
 
+// ─── request / JSON hardening ───────────────────────────────────────────────
+// The web app persists everything as JSON (there is no SQL layer), so the real
+// injection risk is prototype pollution: a crafted body like
+// {"__proto__":{...}} or {"constructor":{"prototype":{...}}} could poison
+// Object.prototype and tamper with downstream logic. We strip those keys on
+// every parse, cap request size, and coerce inputs to safe types before they
+// reach the data layer.
+function stripDangerous(value) {
+  if (Array.isArray(value)) return value.map(stripDangerous);
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const k of Object.keys(value)) {
+      if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
+      out[k] = stripDangerous(value[k]);
+    }
+    return out;
+  }
+  return value;
+}
+
+function safeParse(raw) {
+  try { return raw ? stripDangerous(JSON.parse(raw)) : {}; }
+  catch { return {}; }
+}
+
+function toStrArray(v) {
+  return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : [];
+}
+
+
 // Bump when new web-only endpoints/features are added so the frontend can warn
 // the manager if their running backend process is stale (it loads routes at
 // startup, so editing server.js requires a restart to take effect).
@@ -61,8 +91,8 @@ const highlowSessions = new Map();
 function loadSessions() {
   try {
     const raw = fs.readFileSync(SESSIONS_FILE, 'utf8');
-    const obj = raw.trim() ? JSON.parse(raw) : {};
-    for (const [token, id] of Object.entries(obj)) sessions.set(token, id);
+    const obj = safeParse(raw);
+    for (const [token, id] of Object.entries(obj)) sessions.set(token, String(id));
   } catch {}
 }
 function saveSessions() {
@@ -142,10 +172,14 @@ const CORS = {
 function readBody(req) {
   return new Promise((resolve) => {
     let data = '';
-    req.on('data', (c) => (data += c));
+    let tooBig = false;
+    req.on('data', (c) => {
+      data += c;
+      if (data.length > 1e6) { tooBig = true; req.destroy(); } // cap body at ~1MB
+    });
     req.on('end', () => {
-      try { resolve(data ? JSON.parse(data) : {}); }
-      catch { resolve({}); }
+      if (tooBig) return resolve({});
+      resolve(safeParse(data));
     });
   });
 }
@@ -246,8 +280,8 @@ const server = http.createServer(async (req, res) => {
       if (!u) return send(res, 404, { error: 'Account not found.' });
 
       const owned = new Set([...(u.startingXI || []), ...(u.bench || []), ...(u.reserves || [])]);
-      const xi = Array.isArray(body.startingXI) ? body.startingXI.filter((x) => owned.has(x)) : u.startingXI;
-      const bench = Array.isArray(body.bench) ? body.bench.filter((x) => owned.has(x)) : u.bench;
+      const xi = toStrArray(body.startingXI).filter((x) => owned.has(x));
+      const bench = toStrArray(body.bench).filter((x) => owned.has(x));
       const xiSize = Math.min(xi.length, 4);
 
       // de-dupe: anything not in XI goes to bench
@@ -627,7 +661,7 @@ const server = http.createServer(async (req, res) => {
 function readJsonFile(file) {
   try {
     const raw = fs.readFileSync(file, 'utf8');
-    return raw.trim() ? JSON.parse(raw) : {};
+    return safeParse(raw);
   } catch {
     return {};
   }
