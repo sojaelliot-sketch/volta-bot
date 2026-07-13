@@ -17,6 +17,11 @@ const { connectDB } = require('./config/database');
 const router = require('./commands/router');
 const { sendText } = require('./utils/messaging');
 const { BRAND } = require('./config/constants');
+const { startTipScheduler } = require('./utils/tips');
+
+// The active WhatsApp socket — re-assigned on every (re)connect so the tip
+// scheduler always sends through a live connection.
+let activeSock = null;
 
 const SESSION_DIR = process.env.SESSION_DIR || './sessions';
 const USE_PAIRING_CODE = String(process.env.USE_PAIRING_CODE).toLowerCase() === 'true';
@@ -43,6 +48,7 @@ async function startBot() {
     markOnlineOnConnect: false,
     generateHighQualityLinkPreview: false,
   });
+  activeSock = sock;
 
   // ── Pairing-code login (alternative to scanning a QR) ──────────────────
   if (USE_PAIRING_CODE && PHONE_NUMBER && !sock.authState.creds.registered && !pairingRequested) {
@@ -138,6 +144,7 @@ async function startBot() {
 async function main() {
   await connectDB();
   await startBot();
+  startTipScheduler(() => activeSock, 60 * 1000);
 }
 
 main().catch((err) => {

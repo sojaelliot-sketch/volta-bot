@@ -509,7 +509,7 @@ const server = http.createServer(async (req, res) => {
       }
       const playerId = String(body.playerId || '').toUpperCase();
       if (!playerId || !price || price <= 0) return send(res, 400, { error: 'Usage: playerId + price required.' });
-      const player = Player.getByOwner(id).find((pl) => pl.id.startsWith(playerId));
+      const player = Player.findByQuery(id, playerId);
       if (!player) return send(res, 404, { error: 'Player not found in your squad.' });
       if (player.isListed) return send(res, 400, { error: 'Player already listed.' });
       const mv = Player.marketValue(player);
@@ -551,7 +551,7 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, { ok: true, moved, to: them.name, user: publicUser(db.findById('users', id)) });
       }
       const playerId = String(body.playerId || '').toUpperCase();
-      const player = Player.getByOwner(id).find((pl) => pl.id.startsWith(playerId));
+      const player = Player.findByQuery(id, playerId);
       if (!player) return send(res, 404, { error: 'Player not found in your squad.' });
       if (player.isListed) return send(res, 400, { error: 'Cancel the market listing first.' });
       transfer.transferPlayer(player.id, id, them.whatsappId);

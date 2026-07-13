@@ -117,7 +117,7 @@ function findOwnedByShortId(ownerId, short) {
   // Only consider the manager's ACTIVE squad — never leak a player from a
   // different saved squad into a live match.
   const owned = Player.getSquadPlayers(ownerId);
-  return owned.find(p => p.id.startsWith(short)) || null;
+  return Player.findByQuery(ownerId, short) || owned.find(p => p.id.startsWith(short)) || null;
 }
 
 // Apply a substitution during a paused PvP segment.

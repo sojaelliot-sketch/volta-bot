@@ -148,7 +148,7 @@ async function handle({ sock, msg, jid, sender, cmd, args, replyTo, mentioned })
       return;
     }
     // Target can be: a reply to their message, an @mention, or a number.
-    const target = replyTo || mentioned || mentionedJid(msg) || toJid(args[0]);
+    const target = User.normalizeJid(replyTo || mentioned || mentionedJid(msg) || toJid(args[0]));
     if (!target) {
       await sendText(sock, jid, `⚔️ *Challenge a friend!*\nReply to their message with *!challenge*, tag them: *!challenge @username*, or use *!challenge [number]*`, msg);
       return;

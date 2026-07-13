@@ -53,8 +53,8 @@ async function handle({ sock, msg, jid, sender, args }) {
     out += `${medal} *${u.name}* — ${cat.fmt(cat.get(u))} (${u.rank || 'Bronze'})\n`;
   });
 
-  const me = User.getByWhatsappId(sender);
-  const myPos = ranked.findIndex(u => u.whatsappId === sender) + 1;
+   const me = User.getByWhatsappId(sender);
+   const myPos = ranked.findIndex(u => User.normalizeJid(u.whatsappId) === User.normalizeJid(sender)) + 1;
   if (me?.registered && myPos) {
     out += `\n━━━━━━━━━━━━━━━━━━━━━━━\n📍 You: #${myPos} of ${ranked.length} — ${cat.fmt(cat.get(me))}`;
   }

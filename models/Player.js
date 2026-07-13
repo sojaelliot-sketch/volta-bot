@@ -78,7 +78,7 @@ function newPlayerDoc({
 }
 
 function create(fields) {
-  const doc = newPlayerDoc(fields);
+  const doc = newPlayerDoc({ ...fields, ownerId: User.normalizeJid(fields.ownerId) });
   return db.insert(TABLE, doc.id, doc);
 }
 
@@ -87,7 +87,8 @@ function getById(id) {
 }
 
 function getByOwner(ownerId) {
-  return db.find(TABLE, (p) => p.ownerId === ownerId);
+  const id = User.normalizeJid(ownerId);
+  return db.find(TABLE, (p) => User.normalizeJid(p.ownerId) === id);
 }
 
 // Resolve a player by exact id, or by a (case-insensitive) id prefix across the
@@ -97,6 +98,38 @@ function findByPrefix(prefix) {
   if (!prefix) return null;
   const p = String(prefix).toUpperCase();
   return db.find(TABLE, (x) => x.id.startsWith(p));
+}
+
+// Resolve a single player owned by `ownerId` from a human-friendly query:
+// exact id, id prefix, full nickname/name (case-insensitive), or name prefix.
+// Lets managers type a player's NAME instead of hunting for an ID.
+function findByQuery(ownerId, q) {
+  if (!q) return null;
+  const owned = getByOwner(ownerId);
+  const s = String(q).trim().toLowerCase();
+  let p = owned.find((x) => x.id.toLowerCase() === s);
+  if (p) return p;
+  p = owned.find((x) => x.id.toLowerCase().startsWith(s));
+  if (p) return p;
+  p = owned.find((x) => (x.nickname || '').toLowerCase() === s || (x.name || '').toLowerCase() === s);
+  if (p) return p;
+  p = owned.find((x) => (x.nickname || '').toLowerCase().startsWith(s) || (x.name || '').toLowerCase().startsWith(s));
+  return p || null;
+}
+
+// Resolve a single player from the WHOLE pool by exact id, id prefix, or
+// nickname/name. Used by the auction host, who may list any player.
+function findAny(q) {
+  if (!q) return null;
+  const s = String(q).trim().toLowerCase();
+  const all = db.all(TABLE);
+  let p = all.find((x) => x.id.toLowerCase() === s);
+  if (p) return p;
+  p = all.find((x) => x.id.toLowerCase().startsWith(s));
+  if (p) return p;
+  p = all.find((x) => (x.nickname || '').toLowerCase() === s || (x.name || '').toLowerCase() === s);
+  if (p) return p;
+  return all.find((x) => (x.nickname || '').toLowerCase().startsWith(s) || (x.name || '').toLowerCase().startsWith(s)) || null;
 }
 
 function update(id, patch) {
@@ -148,6 +181,8 @@ module.exports = {
   getById,
   getByOwner,
   findByPrefix,
+  findByQuery,
+  findAny,
   getSquadPlayers,
   update,
   remove,

@@ -88,9 +88,9 @@ async function handle({ sock, msg, jid, sender, cmd, args }) {
       let item;
       const givenId = args[1];
       if (givenId && givenId !== 'auto') {
-        // Resolve by exact id first, then by id prefix across the WHOLE pool
-        // (an officer/owner can auction any player, not just ones they own).
-        item = Player.getById(givenId) || Player.findByPrefix(givenId);
+        // Resolve by exact id first, then by id prefix / name across the WHOLE
+        // pool (an officer/owner can auction any player, not just ones they own).
+        item = Player.getById(givenId) || Player.findAny(givenId);
         if (!item) { await sendText(sock, jid, `❌ Player *${givenId}* not found.`, msg); return; }
       } else {
         item = buildPlayer(sender, AUCTION.HIGH_PLAYER_RARITY);

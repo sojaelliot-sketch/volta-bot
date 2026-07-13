@@ -36,6 +36,11 @@ function newUserDoc(whatsappId, name) {
     currentMatchId: null,
     registered: false,
 
+    // Onboarding tips — tipStart is set on registration; tipIndex counts how
+    // many of the TIPS pool this manager has received (survives restarts).
+    tipStart: null,
+    tipIndex: 0,
+
     // Referral
     refCode: null,          // this manager's invite code
     referredBy: null,       // whatsappId of the manager who referred them
@@ -50,12 +55,20 @@ function newUserDoc(whatsappId, name) {
   };
 }
 
-// Normalize a WhatsApp jid: drop the multi-device ":<id>" suffix and any
-// trailing noise, so 2349011861051:23@s.whatsapp.net and
-// 2349011861051@s.whatsapp.net resolve to the same account.
+// Normalize a WhatsApp jid so different serializations of the same account
+// resolve identically:
+//   • drop the multi-device ":<id>" suffix
+//     (2349011861051:23@s.whatsapp.net → 2349011861051@s.whatsapp.net)
+//   • unify personal-chat domains. Some clients surface @mentions / replies as
+//     the Linked-ID form "2349011861051@lid", which is the SAME account as
+//     "2349011861051@s.whatsapp.net". Map @lid → @s.whatsapp.net so challenge
+//     targets (and every lookup) match the stored id.
+// Group jids (…@g.us) are left untouched.
 function normalizeJid(jid) {
   if (!jid) return jid;
-  return String(jid).split(':')[0];
+  let s = String(jid).split(':')[0];
+  if (s.endsWith('@lid')) s = s.slice(0, -4) + '@s.whatsapp.net';
+  return s;
 }
 
 function getByWhatsappId(whatsappId) {

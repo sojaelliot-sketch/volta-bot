@@ -252,4 +252,9 @@ module.exports = {
     MAX_STAKE: 2000,
     WIN_REWARD_MULT: 1.8,        // payout multiplier on the stake when you win the shootout
   },
+
+  // ─── TIPS (onboarding series pushed 10 min after registration) ────────────
+  TIPS: {
+    INTERVAL_MS: 10 * 60 * 1000, // one tip every 10 minutes until the pool is exhausted
+  },
 };

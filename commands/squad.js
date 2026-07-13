@@ -26,8 +26,7 @@ function gkPosition(p) {
 }
 
 function findPlayerByShortId(ownerId, shortIdArg) {
-  const owned = Player.getByOwner(ownerId);
-  return owned.find((p) => p.id.startsWith(shortIdArg)) || null;
+  return Player.findByQuery(ownerId, shortIdArg);
 }
 
 function statsLine(p) {

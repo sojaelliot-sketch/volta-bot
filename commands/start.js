@@ -85,7 +85,7 @@ Example: *!register Elliot*
   const startingXI = players.map((p) => p.id);
   const bench = [];
 
-  const patch = { registered: true, startingXI, bench };
+  const patch = { registered: true, startingXI, bench, tipStart: new Date().toISOString(), tipIndex: 0 };
   if (referrer) {
     patch.referredBy = referrer.whatsappId;
     // reward the new manager

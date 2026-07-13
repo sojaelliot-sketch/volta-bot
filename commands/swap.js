@@ -18,8 +18,7 @@ const LIST_ALIASES = {
 function shortId(id) { return (id || '').slice(0, 6); }
 
 function findPlayerByShortId(ownerId, shortIdArg) {
-  const owned = Player.getByOwner(ownerId);
-  return owned.find((p) => p.id.startsWith(shortIdArg)) || null;
+  return Player.findByQuery(ownerId, shortIdArg);
 }
 
 function whichList(user, playerId) {

@@ -76,7 +76,7 @@ async function handle({ sock, msg, jid, sender, args, replyTo, mentioned }) {
   }
 
   // ── single-player dash ──
-  const player = Player.getByOwner(sender).find(p => p.id.startsWith(playerId));
+  const player = Player.findByQuery(sender, playerId);
   if (!player) {
     await sendText(sock, jid, `❌ No player found with ID *${playerId}*. Use *!squad* to view your players.`, msg);
     return;
