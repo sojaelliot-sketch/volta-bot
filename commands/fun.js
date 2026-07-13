@@ -50,7 +50,7 @@ async function handle({ sock, msg, jid, sender, cmd, args }) {
   if (cmd === 'coinflip' || cmd === 'flip') {
     let amount = parseInt(args[0], 10);
     if (!amount || isNaN(amount)) {
-      await sendText(sock, jid, `⚠️ Usage: *!coinflip [amount]* — double or nothing!`, msg);
+      await sendText(sock, jid, `⚠️ Usage: *!coinflip [amount]* — double or nothing!\n💡 Predict: *!coinflip [amount] heads|tails*`, msg);
       return;
     }
     amount = Math.max(COINFLIP.MIN, Math.min(COINFLIP.MAX, amount));
@@ -58,18 +58,29 @@ async function handle({ sock, msg, jid, sender, cmd, args }) {
       await sendText(sock, jid, `❌ Need *${amount}* Metaworks to flip. You've got *${user.currency || 0}*.`, msg);
       return;
     }
-    const win = Math.random() < 0.5;
-    if (win) {
-      User.update(sender, { currency: (user.currency || 0) + amount });
-      await sendText(sock, jid,
-        `🪙 *FLIP...* ${pick(['🔥', '💥', '⚡'])}\n` +
-        `✅ *YOU WON!* +${amount} Metaworks!\n💳 Balance: *${User.getByWhatsappId(sender).currency}*`, msg);
+
+    const face = Math.random() < 0.5 ? 'heads' : 'tails';
+    const faceEmoji = face === 'heads' ? '👑 HEADS' : '🔻 TAILS';
+    const pickFace = (args[1] || '').toLowerCase();
+    const predicted = pickFace === 'heads' || pickFace === 'tails';
+    const win = predicted ? (face === pickFace) : (Math.random() < 0.5);
+
+    User.update(sender, { currency: (user.currency || 0) + (win ? amount : -amount) });
+    const balance = User.getByWhatsappId(sender).currency;
+
+    let head;
+    if (predicted) {
+      head = `🪙 *COIN FLIP* — you called *${pickFace.toUpperCase()}*\n🎲 The coin landed on *${faceEmoji}*`;
     } else {
-      User.update(sender, { currency: (user.currency || 0) - amount });
-      await sendText(sock, jid,
-        `🪙 *FLIP...* ${pick(['😬', '💀', '📉'])}\n` +
-        `❌ *YOU LOST!* -${amount} Metaworks.\n💳 Balance: *${User.getByWhatsappId(sender).currency}*`, msg);
+      head = `🪙 *COIN FLIP* — the coin landed on *${faceEmoji}*`;
     }
+
+    await sendText(sock, jid,
+      `${head}\n` +
+      (win
+        ? `✅ *YOU WON!* +${amount} Metaworks! 🔥`
+        : `❌ *YOU LOST!* -${amount} Metaworks. 😬`) +
+      `\n💳 Balance: *${balance}*`, msg);
     return;
   }
 }

@@ -41,8 +41,8 @@ const MENU = `⚽ *VOLTA* — ${BRAND}
 
 *🎰 GRIND METAWORKS*
 !slot [stake] — 🎰 Spin
-!coinflip [amount] — 🪙 50/50
-!highlow [higher|lower] [stake] — 🎲 High/Low (1–9)
+!coinflip [amount] [heads|tails] — 🪙 Call it, coin shows the face
+!highlow [stake] → !highlow [higher|lower] — 🎲 Number shown, then you guess
 !wallet / !bal — 💰 Your balance + record
 !give [amt] @user — 🤝 Send money
 !daily — 📅 Daily
@@ -65,6 +65,7 @@ const MENU = `⚽ *VOLTA* — ${BRAND}
 !ban / !unban [id] — ⛔ (Officer+)
 !auction start [id|auto] [min] — 🔨 (Officer+)
 !bid [amount] — 💎 (any registered manager)
+!clearpvp — 🧹 Force-clear all stuck PvP matches (Owner/Staff)
 !giveaway [amt] [winners] — 🎉 (Mod+)
 !tournament start classic|penalty [prize] — 🏆 (Mod+)
 !join — 🎮 Enter tournament

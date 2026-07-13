@@ -896,4 +896,25 @@ async function decayConditions(squad) {
   }
 }
 
-module.exports = { startMatch, isChatLocked, getActivePvPForUser, applySub, getPvpSessionFor, resolveChance };
+// Force-clear every in-progress PvP match + interactive chance session + the
+// chat locks they hold. Used by the owner's !clearpvp recovery command when a
+// PvP game gets stuck (e.g. a player goes offline mid-match and the chat stays
+// locked). Does NOT touch single-player AI matches.
+function clearAllPvP() {
+  let cleared = 0;
+  for (const [id, s] of activeSessions) {
+    if (s && s.isPvP) {
+      clearPvpTimer(s);
+      activeSessions.delete(id);
+      cleared++;
+    }
+  }
+  pvpChances.clear();
+  for (const [jid, lock] of [...lockedChats]) {
+    // PvP locks carry two participants (home + away); AI locks carry one.
+    if (lock.participants && lock.participants.length === 2) lockedChats.delete(jid);
+  }
+  return cleared;
+}
+
+module.exports = { startMatch, isChatLocked, getActivePvPForUser, applySub, getPvpSessionFor, resolveChance, clearAllPvP };

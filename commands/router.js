@@ -86,6 +86,7 @@ const handlers = {
   on: () => require('./botstate'),
   off: () => require('./botstate'),
   reload: () => require('./reload'),
+  clearpvp: () => require('./pvpadmin'),
   explain: () => require('./explain'),
   guide: () => require('./explain'),
   how: () => require('./explain'),

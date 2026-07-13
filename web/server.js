@@ -535,11 +535,14 @@ const server = http.createServer(async (req, res) => {
       reload();
       const u = db.findById('users', id);
       if ((u.currency || 0) < amount) return send(res, 400, { error: `Need ${amount} Metaworks to flip.` });
-      const win = Math.random() < 0.5;
+      const face = Math.random() < 0.5 ? 'heads' : 'tails';   // the coin's actual result
+      const pickFace = String(body.face || '').toLowerCase();
+      const predicted = pickFace === 'heads' || pickFace === 'tails';
+      const win = predicted ? (face === pickFace) : (Math.random() < 0.5);
       const net = win ? amount : -amount;
       User.update(id, { currency: (u.currency || 0) + net });
       reload();
-      return send(res, 200, { ok: true, win, amount, net, currency: db.findById('users', id).currency, user: publicUser(db.findById('users', id)) });
+      return send(res, 200, { ok: true, face, pick: predicted ? pickFace : null, win, amount, net, currency: db.findById('users', id).currency, user: publicUser(db.findById('users', id)) });
     }
 
     // ── SLOT ──
