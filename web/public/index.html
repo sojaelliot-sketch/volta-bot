@@ -243,6 +243,7 @@
       <div id="teamName"></div>
     </div>
     <div class="topright">
+      <button class="iconbtn" id="settingsBtn" title="Settings">⚙</button>
       <button class="iconbtn" id="themeBtn" title="Toggle theme">◐</button>
       <button class="btn ghost sm" id="renameBtn">Rename</button>
       <button class="btn sm" id="logoutBtn">Log out</button>
@@ -390,10 +391,40 @@
       <tbody id="lbBody"></tbody>
     </table>
   </section>
+
+  <section id="marketView" class="hidden">
+    <div class="sec-title" style="margin-top:0"><h2>🏪 Transfer Market</h2><button class="btn sm" id="mktRefresh">Refresh</button></div>
+    <div class="roster" id="mktList"></div>
+
+    <div class="sec-title"><h2>📤 List a player</h2></div>
+    <div class="panel">
+      <div class="desc">Sell one of your players, or your whole squad. Listings expire after 10 min — the house buys them at market value if unsold.</div>
+      <div class="ctrl">
+        <select class="field" id="mktPlayer"></select>
+        <input class="field" id="mktPrice" type="number" min="0" placeholder="price (0 = market value)" style="max-width:200px;flex:initial;margin-bottom:0" />
+        <button class="btn sm" id="mktListBtn">List</button>
+        <button class="btn ghost sm" id="mktListSquadBtn">List whole squad</button>
+      </div>
+      <div class="gres" id="mktListRes" style="margin-top:12px">Pick a player and a price.</div>
+    </div>
+
+    <div class="sec-title"><h2>🎁 Dash / gift</h2></div>
+    <div class="panel">
+      <div class="desc">Gift a player or your whole squad to another registered manager by their team name.</div>
+      <div class="ctrl">
+        <select class="field" id="dashPlayer"></select>
+        <input class="field" id="dashTarget" type="text" placeholder="recipient team name" style="flex:1;margin-bottom:0" />
+        <button class="btn sm" id="dashBtn">Dash player</button>
+        <button class="btn ghost sm" id="dashSquadBtn">Dash whole squad</button>
+      </div>
+      <div class="gres" id="dashRes" style="margin-top:12px">Pick a recipient team name.</div>
+    </div>
+  </section>
 </div>
 
 <nav class="nav hidden" id="nav">
   <button data-view="dash" class="active"><span class="ic">▦</span>Dashboard</button>
+  <button data-view="marketView"><span class="ic">🏪</span>Market</button>
   <button data-view="shop"><span class="ic">🛍️</span>Shop</button>
   <button data-view="games"><span class="ic">🎮</span>Games</button>
   <button data-view="lbView"><span class="ic">🏆</span>Leaders</button>
@@ -412,17 +443,27 @@ const $ = (id) => document.getElementById(id);
 let TOKEN = localStorage.getItem('volta_token') || null;
 let ME = null;
 
-// ── BACKEND URL (set once to your tunnel / VPS where web/server.js runs) ──
-const API_BASE = "https://footpad-cobbler-attempt.ngrok-free.dev";
-
-function apiBase(){ return API_BASE && API_BASE.trim() ? API_BASE.replace(/\/$/, '') : window.location.origin; }
+// ── BACKEND URL ────────────────────────────────────────────────────────────
+// The web backend (web/server.js) is hosted separately (tunnel / VPS), and its
+// public URL changes whenever a free tunnel is restarted. So we persist the
+// chosen URL in localStorage and let the manager edit it from Settings — the
+// hardcoded value below is only the initial default. This is what fixes the
+// "Leaderboard won't load" problem: pick the current backend URL in Settings.
+let API_BASE = (localStorage.getItem('volta_base') || "https://footpad-cobbler-attempt.ngrok-free.dev").trim();
+function apiBase(){ return API_BASE ? API_BASE.replace(/\/$/, '') : window.location.origin; }
+function setApiBase(url){
+  API_BASE = (url || '').trim();
+  if (API_BASE) localStorage.setItem('volta_base', API_BASE);
+  else { localStorage.removeItem('volta_base'); API_BASE = window.location.origin; }
+}
 function show(view){
-  ['login','dash','shop','games','lbView'].forEach(s=>$(s).classList.toggle('hidden', s!==view));
+  ['login','dash','marketView','shop','games','lbView'].forEach(s=>$(s).classList.toggle('hidden', s!==view));
   const loggedIn = view!=='login';
   $('topbar').classList.toggle('hidden', !loggedIn);
   $('nav').classList.toggle('hidden', !loggedIn);
   $('nav').querySelectorAll('button').forEach(b=>b.classList.toggle('active', b.dataset.view===view));
   if(view==='lbView') loadLeaderboard();
+  if(view==='marketView') loadMarket();
 }
 function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2400); }
 function showWarn(msg){ $('warnMsg').innerHTML = msg; $('warn').classList.remove('hidden'); }
@@ -851,6 +892,110 @@ async function hlGuess(dir){
     hlFirst=null;
   }catch(e){ $('hlRes').textContent=e.message; }
 }
+
+// ── SETTINGS (backend URL — fixes Leaderboard / data fetch) ──
+$('settingsBtn').onclick = () => {
+  $('modalBody').innerHTML = `
+    <h3>⚙ Settings</h3>
+    <div class="desc muted" style="font-size:12px;margin-bottom:12px">The web backend runs on a separate URL (tunnel / VPS). If the Leaderboard or data won't load, paste your current backend URL here (e.g. your ngrok / VPS address). It's saved on this device.</div>
+    <input class="field" id="setBase" type="url" placeholder="https://your-backend-url" value="${API_BASE}" style="margin-bottom:14px" />
+    <div class="ctrl">
+      <button class="btn sm" id="setSave">Save</button>
+      <button class="btn ghost sm" id="setTest">Test connection</button>
+    </div>
+    <div class="gres" id="setRes" style="margin-top:12px">Saved to this device.</div>`;
+  $('modal').classList.remove('hidden');
+  $('setSave').onclick = () => {
+    setApiBase($('setBase').value);
+    $('setRes').textContent = 'Saved ✓ Reconnecting…';
+    checkBackend();
+  };
+  $('setTest').onclick = async () => {
+    try {
+      const r = await fetch(apiBase() + '/api/info');
+      if (!r.ok) throw new Error('bad status');
+      const d = await r.json();
+      $('setRes').textContent = `Connected ✓ backend v${d.version}`;
+    } catch { $('setRes').textContent = 'Could not reach that URL. Check it and try again.'; }
+  };
+};
+
+// ── MARKET (browse / buy / list / dash) ──
+function mktPlayerCard(l){
+  const p = l.player;
+  const mineTag = l.isMine ? `<span class="tag" style="background:var(--ink);color:var(--paper)">YOURS</span>` : '';
+  const seller = l.sellerId === 'AI_MARKET' ? 'AI Market' : (l.sellerName || 'Manager');
+  return `<div class="pc">
+    <div class="nm"><span>${p.name}</span><span class="rid mono">${p.id}</span></div>
+    <div class="row"><span class="mini">OVR ${p.total}</span>${posTag(p.position)}${rarityTag(p.rarity)}<span class="mini">Lv.${p.level}</span></div>
+    <div class="row"><span class="mini">💰 ${l.price}</span><span class="mini">MV ${p.marketValue}</span><span class="mini">${seller}</span></div>
+    <div class="row" style="margin-top:6px">
+      <button class="btn sm" data-buy="${l.id}" ${l.isMine?'disabled':''}>Buy</button>
+    </div>
+    ${mineTag}
+  </div>`;
+}
+async function loadMarket(){
+  try{
+    const { listings } = await api('/api/market' + (TOKEN ? '?token='+TOKEN : ''));
+    $('mktList').innerHTML = listings.length ? listings.map(mktPlayerCard).join('')
+      : `<div class="muted">Market is empty — the AI is restocking…</div>`;
+    $('mktList').querySelectorAll('[data-buy]').forEach(b=> b.onclick = ()=> buyListing(b.dataset.buy));
+    fillMarketSelects();
+  }catch(e){ $('mktList').innerHTML = `<div class="muted">Could not load market. Check Settings → backend URL. (${e.message})</div>`; }
+}
+$('mktRefresh').onclick = loadMarket;
+async function buyListing(id){
+  try{
+    const { user, player } = await api('/api/market/buy', {method:'POST', body:JSON.stringify({token:TOKEN, listingId:id})});
+    ME=user; renderDash(); toast(`Signed ${player.name} ✓`); loadMarket();
+  }catch(e){ toast(e.message); }
+}
+function fillMarketSelects(){
+  const sellable = ME.roster.filter(p=>!p.isListed);
+  const opts = sellable.map(p=>`<option value="${p.id}">${p.name} (${p.id}) · ${p.total} · MV ${p.marketValue}</option>`).join('');
+  $('mktPlayer').innerHTML = opts || `<option value="">No players to list</option>`;
+  $('dashPlayer').innerHTML = opts || `<option value="">No players to dash</option>`;
+}
+$('mktListBtn').onclick = async () => {
+  const playerId = $('mktPlayer').value; const price = parseInt($('mktPrice').value,10)||0;
+  if(!playerId) return toast('Select a player.');
+  try{
+    const { user, listing } = await api('/api/market/list', {method:'POST', body:JSON.stringify({token:TOKEN, playerId, price})});
+    ME=user; renderDash(); fillMarketSelects();
+    $('mktListRes').textContent = `Listed ${listing.player.name} for ${listing.price} ✓`;
+    toast('Player listed ✓'); loadMarket();
+  }catch(e){ $('mktListRes').textContent = e.message; }
+};
+$('mktListSquadBtn').onclick = async () => {
+  const price = parseInt($('mktPrice').value,10)||0;
+  try{
+    const { user, listed } = await api('/api/market/list', {method:'POST', body:JSON.stringify({token:TOKEN, squad:true, price})});
+    ME=user; renderDash(); fillMarketSelects();
+    $('mktListRes').textContent = `Listed ${listed} player(s) ✓`;
+    toast('Squad listed ✓'); loadMarket();
+  }catch(e){ $('mktListRes').textContent = e.message; }
+};
+$('dashBtn').onclick = async () => {
+  const playerId = $('dashPlayer').value; const target = $('dashTarget').value.trim();
+  if(!playerId || !target) return toast('Select a player and enter a team name.');
+  try{
+    const { user, player, to } = await api('/api/market/dash', {method:'POST', body:JSON.stringify({token:TOKEN, playerId, target})});
+    ME=user; renderDash(); fillMarketSelects();
+    $('dashRes').textContent = `Dashed ${player} → ${to} ✓`;
+    toast('Dashed ✓'); loadMarket();
+  }catch(e){ $('dashRes').textContent = e.message; }
+};
+$('dashSquadBtn').onclick = async () => {
+  const target = $('dashTarget').value.trim();
+  if(!target) return toast('Enter a recipient team name.');
+  try{
+    const { user, moved, to } = await api('/api/market/dash', {method:'POST', body:JSON.stringify({token:TOKEN, squad:true, target})});
+    ME=user; renderDash(); fillMarketSelects();
+    $('dashRes').textContent = `Dashed ${moved} player(s) → ${to} ✓`;
+    toast('Squad dashed ✓'); loadMarket();
+  }catch(e){ $('dashRes').textContent = e.message; }
+};
 
 // ── boot ──
 (async function boot(){

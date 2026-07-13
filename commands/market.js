@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const Player = require('../models/Player');
+const transfer = require('../models/transfer');
 const db = require('../config/database');
 const { MARKET, RARITY } = require('../config/constants');
 const { money, bar } = require('../utils/formatter');
@@ -9,13 +10,21 @@ const { v4: uuid } = require('uuid');
 
 const MARKET_TABLE = 'market';
 const LISTING_HOURS_MS = MARKET.LISTING_HOURS * 60 * 60 * 1000;
+const USER_LISTING_TTL_MS = MARKET.USER_LISTING_TTL_MS;
 
 async function handle({ sock, msg, jid, sender, cmd, args, user }) {
+  botSock = sock;
   if (cmd === 'market') return cmdMarket({ sock, msg, jid, args });
   if (cmd === 'buy') return cmdBuy({ sock, msg, jid, sender, user, args });
   if (cmd === 'sell') return cmdSell({ sock, msg, jid, sender, user, args });
   if (cmd === 'list') return cmdList({ sock, msg, jid, sender, user, args });
 }
+
+// Periodic sweep so user listings auto-expire (house buyout) even if nobody
+// opens the market. Runs every minute.
+setInterval(() => {
+  try { processExpired(botSock); } catch {}
+}, 60 * 1000);
 
 async function ensureSeedMarket() {
   const listings = db.all(MARKET_TABLE);
@@ -32,6 +41,7 @@ async function ensureSeedMarket() {
         sellerName: 'AI Market',
         price,
         listedAt: new Date().toISOString(),
+        expiresAt: null, // house listings never auto-expire; they rotate when bought
         sold: false,
       });
     }
@@ -39,11 +49,46 @@ async function ensureSeedMarket() {
 }
 
 function isExpired(listing) {
-  const elapsed = Date.now() - new Date(listing.listedAt).getTime();
-  return elapsed > LISTING_HOURS_MS;
+  // AI/house listings carry no expiresAt, so they only rotate when bought.
+  if (!listing.expiresAt) return false;
+  return Date.now() > new Date(listing.expiresAt).getTime();
 }
 
+// Run on every market access + on a timer: any user listing past its 10-minute
+// TTL is auto-bought by the house at the player's market value (the seller gets
+// the "normal price"), and the player is dropped onto the AI Market. This keeps
+// the public market flowing without manual cleanup.
+function processExpired(sock) {
+  const all = db.all(MARKET_TABLE);
+  for (const l of all) {
+    if (l.sold || !isExpired(l)) continue;
+    if (l.sellerId === transfer.HOUSE) {
+      db.update(MARKET_TABLE, l.id, { sold: true });
+      continue;
+    }
+    const player = Player.getById(l.playerId);
+    const seller = User.getByWhatsappId(l.sellerId);
+    if (player && seller) {
+      const payout = Player.marketValue(player);
+      User.update(l.sellerId, { currency: (seller.currency || 0) + payout });
+      transfer.transferPlayer(player.id, l.sellerId, transfer.HOUSE);
+      if (sock) {
+        sendText(sock, l.sellerId,
+          `⏰ *LISTING EXPIRED* 🏦\n━━━━━━━━━━━━━━━━━━━━━━━\n` +
+          `*${Player.displayName(player)}* didn't sell in 10 min.\n` +
+          `The house bought it for *${money(payout)}* (market value) and it's now on the AI Market.`, undefined)
+          .catch(() => {});
+      }
+    }
+    db.update(MARKET_TABLE, l.id, { sold: true });
+  }
+}
+
+// Keep a handle on the live socket so the periodic ticker can notify sellers.
+let botSock = null;
+
 async function cmdMarket({ sock, msg, jid, args }) {
+  processExpired(sock);
   await ensureSeedMarket();
 
   const allListings = db.all(MARKET_TABLE);
@@ -86,6 +131,7 @@ async function cmdMarket({ sock, msg, jid, args }) {
 }
 
 async function cmdBuy({ sock, msg, jid, sender, user, args }) {
+  processExpired(sock);
   const shortId = args[0];
   if (!shortId) {
     await sendText(sock, jid, `⚠️ Usage: *!buy [listingID]* — Get the listing ID from *!market*`, msg);
@@ -130,27 +176,9 @@ async function cmdBuy({ sock, msg, jid, sender, user, args }) {
     }
   }
 
-  // Transfer player
-  Player.update(player.id, { ownerId: sender, isListed: false, marketPrice: 0 });
-
-  // Remove the player from the seller's squad lists so they can't field a
-  // player they no longer own.
-  if (listing.sellerId !== 'AI_MARKET') {
-    const seller = User.getByWhatsappId(listing.sellerId);
-    if (seller) {
-      const clean = (ids) => (ids || []).filter((id) => id !== player.id);
-      User.update(listing.sellerId, {
-        startingXI: clean(seller.startingXI),
-        bench: clean(seller.bench),
-        reserves: clean(seller.reserves),
-      });
-    }
-  }
-
-  // Add to buyer's reserves
-  const buyerUser = User.getByWhatsappId(sender);
-  const newReserves = [...(buyerUser.reserves || []), player.id];
-  User.update(sender, { reserves: newReserves });
+  // Transfer the player from the seller into the buyer's reserves (also strips
+  // it from the seller's squad lists and clears listing flags).
+  transfer.transferPlayer(player.id, listing.sellerId, sender);
 
   // Mark listing as sold
   db.update(MARKET_TABLE, listing.id, { sold: true });
@@ -182,11 +210,53 @@ async function cmdSell({ sock, msg, jid, sender, user, args }) {
 }
 
 async function cmdList({ sock, msg, jid, sender, user, args }) {
+  // ── Squad listing: put every player you own on the market at once ──
+  if ((args[0] || '').toLowerCase() === 'squad') {
+    const price = parseInt(args[1], 10);
+    const players = Player.getSquadPlayers(sender);
+    if (!players.length) {
+      await sendText(sock, jid, `❌ You have no players to list. Build a squad with *!start* first!`, msg);
+      return;
+    }
+    let listed = 0;
+    for (const p of players) {
+      if (p.isListed) continue;
+      const mv = Player.marketValue(p);
+      const listPrice = price > 0 ? price : mv;
+      const minPrice = Math.round(mv * MARKET.MIN_PRICE_RATIO);
+      if (listPrice < minPrice) continue; // skip any below the min at this flat price
+      const listingId = uuid();
+      db.insert(MARKET_TABLE, listingId, {
+        id: listingId,
+        playerId: p.id,
+        sellerId: sender,
+        sellerName: user.name,
+        price: listPrice,
+        listedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + USER_LISTING_TTL_MS).toISOString(),
+        sold: false,
+      });
+      Player.update(p.id, { isListed: true, marketPrice: listPrice });
+      listed++;
+    }
+    if (!listed) {
+      await sendText(sock, jid, `ℹ️ Nothing new listed — your players are already on the market or fall below the minimum price.`, msg);
+      return;
+    }
+    await sendText(sock, jid, `📋 *SQUAD LISTED ON MARKET!*
+━━━━━━━━━━━━━━━━━━━━━━━
+${listed} player(s) put up for sale.
+⏳ Each expires in *${USER_LISTING_TTL_MS / 60000} min* — if unsold, the house buys them at market value.
+💡 Buyers use *!market* + *!buy [id]*`, msg);
+    return;
+  }
+
+  // ── Single player listing ──
   const playerId = args[0];
   const price = parseInt(args[1]);
 
   if (!playerId || !price || price <= 0) {
-    await sendText(sock, jid, `⚠️ Usage: *!list [playerID] [price]*\nExample: *!list ab12cd 500*\n\nGet player IDs from *!squad*`, msg);
+    await sendText(sock, jid, `⚠️ Usage:\n*!list [playerID] [price]* — sell one player\n*!list squad [price?]* — sell your whole squad\n\nGet player IDs from *!squad*`, msg);
     return;
   }
 
@@ -211,7 +281,7 @@ async function cmdList({ sock, msg, jid, sender, user, args }) {
 
   const emoji = RARITY[player.rarity]?.emoji || '⚪';
 
-  // Create listing
+  // Create listing (user listings expire in 10 minutes)
   const listingId = uuid();
   db.insert(MARKET_TABLE, listingId, {
     id: listingId,
@@ -220,20 +290,21 @@ async function cmdList({ sock, msg, jid, sender, user, args }) {
     sellerName: user.name,
     price,
     listedAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + USER_LISTING_TTL_MS).toISOString(),
     sold: false,
   });
 
   Player.update(player.id, { isListed: true, marketPrice: price });
 
   await sendText(sock, jid, `📋 *PLAYER LISTED ON MARKET!*
-━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━
 ${emoji} *${Player.displayName(player)}*
 📊 Market Value: ${money(marketVal)}
 🏷️ Listed at: ${money(price)}
-⏳ Expires: ${MARKET.LISTING_HOURS}h
+⏳ Expires in *${USER_LISTING_TTL_MS / 60000} min* (house buys at market value if unsold)
 
 Other managers can now buy them via *!market*!
-━━━━━━━━━━━━━━━━━━━━━━━━`, msg);
+━━━━━━━━━━━━━━━━━━━━━━━`, msg);
 }
 
 module.exports = { handle };

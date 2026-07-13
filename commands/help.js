@@ -46,6 +46,8 @@ const MENU = `⚽ *VOLTA* — ${BRAND}
 !highlow [stake] → !highlow [higher|lower] — 🎲 Number shown, then you guess
 !wallet / !bal — 💰 Your balance + record
 !give [amt] @user — 🤝 Send money
+!dash [id] @user — 🎁 Gift a player
+!dash @user — 🎁 Gift your whole squad
 !daily — 📅 Daily
 !streak — 🔥 Streak
 
@@ -58,6 +60,7 @@ const MENU = `⚽ *VOLTA* — ${BRAND}
 !train [id] / !train elite [id] — 🏋️
 !market [page] — 📊 Listings
 !buy [id] / !list [id] [price] — 🛒💰
+!list squad [price?] / !sell squad — 📤 List your whole squad (10m)
 
 *🛡️ STAFF / OWNER*
 !mods — 📋 Staff list

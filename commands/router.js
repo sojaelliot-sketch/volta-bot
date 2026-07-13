@@ -49,6 +49,7 @@ const handlers = {
   wallet: () => require('./wallet'),
   bal: () => require('./wallet'),
   give: () => require('./give'),
+  dash: () => require('./dash'),
   squads: () => require('./squads'),
   buysquad: () => require('./squads'),
   switchsquad: () => require('./squads'),

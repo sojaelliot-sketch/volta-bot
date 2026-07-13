@@ -170,7 +170,8 @@ module.exports = {
   // ─── MARKET ────────────────────────────────────────────────────────────
   MARKET: {
     MIN_PRICE_RATIO: 0.5,     // min listing = 50% of market value
-    LISTING_HOURS:   48,
+    LISTING_HOURS:   48,      // AI/house listings live this long
+    USER_LISTING_TTL_MS: 10 * 60 * 1000, // 10 min — user listings auto-sell to house if unsold
     AI_SEED_COUNT:   10,
     PAGE_SIZE:        6,
   },

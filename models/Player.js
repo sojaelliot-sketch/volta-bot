@@ -90,6 +90,15 @@ function getByOwner(ownerId) {
   return db.find(TABLE, (p) => p.ownerId === ownerId);
 }
 
+// Resolve a player by exact id, or by a (case-insensitive) id prefix across the
+// whole player pool. Used by commands where a user might paste a partial/clipped
+// id (e.g. auction / market listings, which only show a short id).
+function findByPrefix(prefix) {
+  if (!prefix) return null;
+  const p = String(prefix).toUpperCase();
+  return db.find(TABLE, (x) => x.id.startsWith(p));
+}
+
 function update(id, patch) {
   return db.update(TABLE, id, patch);
 }
@@ -138,6 +147,7 @@ module.exports = {
   create,
   getById,
   getByOwner,
+  findByPrefix,
   getSquadPlayers,
   update,
   remove,

@@ -4,6 +4,7 @@
 //   !auction end                             — owner/officer closes & awards
 const User = require('../models/User');
 const Player = require('../models/Player');
+const transfer = require('../models/transfer');
 const { buildPlayer } = require('../utils/playerGenerator');
 const { AUCTION, BRAND, RARITY } = require('../config/constants');
 const { money, bar } = require('../utils/formatter');
@@ -49,14 +50,14 @@ function endAuction(sock) {
     return;
   }
 
-  Player.update(a.itemId, { ownerId: a.highestBidder, isAI: false });
+  // Pay the winner's bid; the host (auctioneer) collects the proceeds.
   User.update(a.highestBidder, { currency: (winner.currency || 0) - a.highestBid });
   User.update(a.host, { currency: (User.getByWhatsappId(a.host)?.currency || 0) + a.highestBid });
 
-  // Land the player in the winner's reserves so they can actually use it.
-  const buyer = User.getByWhatsappId(a.highestBidder);
-  const newReserves = [...(buyer.reserves || []), a.itemId];
-  User.update(a.highestBidder, { reserves: newReserves });
+  // Transfer the player from its CURRENT owner (the house for "auto", or the
+  // player's existing owner for a specific id) into the winner's reserves. This
+  // also removes it from the seller's squad lists so it can't be double-owned.
+  transfer.transferPlayer(a.itemId, item.ownerId, a.highestBidder);
 
   const emoji = RARITY[item.rarity]?.emoji || '⚪';
   const role = item.role === 'goalkeeper' ? '🧤 GK' : '⚽ OF';
@@ -87,7 +88,9 @@ async function handle({ sock, msg, jid, sender, cmd, args }) {
       let item;
       const givenId = args[1];
       if (givenId && givenId !== 'auto') {
-        item = Player.getById(givenId) || Player.getByOwner(sender).find(p => p.id.startsWith(givenId));
+        // Resolve by exact id first, then by id prefix across the WHOLE pool
+        // (an officer/owner can auction any player, not just ones they own).
+        item = Player.getById(givenId) || Player.findByPrefix(givenId);
         if (!item) { await sendText(sock, jid, `❌ Player *${givenId}* not found.`, msg); return; }
       } else {
         item = buildPlayer(sender, AUCTION.HIGH_PLAYER_RARITY);

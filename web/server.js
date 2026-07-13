@@ -18,9 +18,11 @@ const crypto = require('crypto');
 const db = require('../config/database');
 const User = require('../models/User');
 const Player = require('../models/Player');
-const { openPack } = require('../utils/playerGenerator');
-const { PACKS, SHOP, TRAINING, PENALTY, COINFLIP, HIGHLOW, SLOT, RARITY } = require('../config/constants');
+const { openPack, seedMarketPlayer } = require('../utils/playerGenerator');
+const { PACKS, SHOP, TRAINING, PENALTY, COINFLIP, HIGHLOW, SLOT, RARITY, MARKET } = require('../config/constants');
 const { randInt, pick, weightedRandom } = require('../utils/random');
+const transfer = require('../models/transfer');
+const { v4: uuid } = require('uuid');
 
 // ─── request / JSON hardening ───────────────────────────────────────────────
 // The web app persists everything as JSON (there is no SQL layer), so the real
@@ -55,7 +57,7 @@ function toStrArray(v) {
 // Bump when new web-only endpoints/features are added so the frontend can warn
 // the manager if their running backend process is stale (it loads routes at
 // startup, so editing server.js requires a restart to take effect).
-const WEB_VERSION = 3;
+const WEB_VERSION = 4;
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
@@ -124,6 +126,7 @@ function publicUser(u) {
     condition: p.condition,
     form: p.form,
     total: playerTotal(p),
+    isListed: !!p.isListed,
     stats: p.stats,
   }));
   const total = (u.wins || 0) + (u.losses || 0) + (u.draws || 0);
@@ -187,6 +190,81 @@ function readBody(req) {
 function authenticate(token) {
   const id = token && sessions.get(token);
   return id || null;
+}
+
+// ─── MARKET helpers (shared with the bot via models/transfer + Player) ──────
+// User listings auto-expire after MARKET.USER_LISTING_TTL_MS; on expiry the
+// house buys the player at market value and it rolls onto the AI Market. This
+// keeps the public market flowing without manual cleanup.
+function marketIsExpired(listing) {
+  if (!listing.expiresAt) return false; // house listings never auto-expire
+  return Date.now() > new Date(listing.expiresAt).getTime();
+}
+
+function marketProcessExpired() {
+  for (const l of db.all('market')) {
+    if (l.sold || !marketIsExpired(l)) continue;
+    if (l.sellerId === transfer.HOUSE) { db.update('market', l.id, { sold: true }); continue; }
+    const player = Player.getById(l.playerId);
+    const seller = User.getByWhatsappId(l.sellerId);
+    if (player && seller) {
+      const payout = Player.marketValue(player);
+      User.update(l.sellerId, { currency: (seller.currency || 0) + payout });
+      transfer.transferPlayer(player.id, l.sellerId, transfer.HOUSE);
+    }
+    db.update('market', l.id, { sold: true });
+  }
+}
+
+function marketEnsureSeed() {
+  const active = db.all('market').filter((l) => l.sold === false && !marketIsExpired(l));
+  if (active.length < MARKET.AI_SEED_COUNT) {
+    const needed = MARKET.AI_SEED_COUNT - active.length;
+    for (let i = 0; i < needed; i++) {
+      const player = seedMarketPlayer();
+      const price = Math.round(Player.marketValue(player) * (0.5 + Math.random() * 0.8));
+      db.insert('market', player.id, {
+        id: player.id,
+        playerId: player.id,
+        sellerId: transfer.HOUSE,
+        sellerName: 'AI Market',
+        price,
+        listedAt: new Date().toISOString(),
+        expiresAt: null,
+        sold: false,
+      });
+    }
+  }
+}
+
+function marketView(l, viewerId) {
+  const p = db.findById('players', l.playerId);
+  if (!p) return null;
+  return {
+    id: l.id.slice(0, 6),
+    fullId: l.id,
+    playerId: p.id,
+    sellerId: l.sellerId,
+    sellerName: l.sellerName,
+    price: l.price,
+    listedAt: l.listedAt,
+    expiresAt: l.expiresAt || null,
+    isMine: viewerId ? l.sellerId === viewerId : false,
+    player: {
+      id: p.id,
+      name: p.nickname || p.name,
+      role: p.role,
+      rarity: p.rarity,
+      level: p.level,
+      age: p.age,
+      position: p.position,
+      stats: p.stats,
+      condition: p.condition,
+      form: p.form,
+      total: playerTotal(p),
+      marketValue: Player.marketValue(p),
+    },
+  };
 }
 
 // ─── penalty helpers ────────────────────────────────────────────────────────
@@ -353,7 +431,132 @@ const server = http.createServer(async (req, res) => {
 
     // ── INFO (frontend compatibility check) ──
     if (p === '/api/info' && req.method === 'GET') {
-      return send(res, 200, { ok: true, version: WEB_VERSION, features: ['shop', 'penalty', 'coinflip', 'slot', 'highlow'] });
+      return send(res, 200, { ok: true, version: WEB_VERSION, features: ['shop', 'penalty', 'coinflip', 'slot', 'highlow', 'market', 'transfer'] });
+    }
+
+    // ── MARKET: browse active listings (public, read-only) ──
+    if (p === '/api/market' && req.method === 'GET') {
+      reload();
+      marketProcessExpired();
+      marketEnsureSeed();
+      const viewerId = authenticate(url.searchParams.get('token'));
+      const listings = db.all('market')
+        .filter((l) => l.sold === false && !marketIsExpired(l))
+        .sort((a, b) => new Date(b.listedAt) - new Date(a.listedAt))
+        .map((l) => marketView(l, viewerId))
+        .filter(Boolean);
+      return send(res, 200, { listings });
+    }
+
+    // ── MARKET: buy a listing ──
+    if (p === '/api/market/buy' && req.method === 'POST') {
+      const body = await readBody(req);
+      const id = authenticate(body.token);
+      if (!id) return send(res, 401, { error: 'Not logged in.' });
+      const shortId = String(body.listingId || '').trim();
+      if (!shortId) return send(res, 400, { error: 'Listing ID required.' });
+      reload();
+      marketProcessExpired();
+      const listing = db.all('market').find((l) => l.id.startsWith(shortId) && l.sold === false && !marketIsExpired(l));
+      if (!listing) return send(res, 404, { error: 'No active listing with that ID.' });
+      if (listing.sellerId === id) return send(res, 400, { error: 'You cannot buy your own listing.' });
+      const u = db.findById('users', id);
+      if ((u.currency || 0) < listing.price) return send(res, 400, { error: `Not enough Metaworks. Need ${listing.price}.` });
+      const player = Player.getById(listing.playerId);
+      if (!player) return send(res, 404, { error: 'Player not found.' });
+      User.update(id, { currency: (u.currency || 0) - listing.price });
+      if (listing.sellerId !== transfer.HOUSE) {
+        const seller = User.getByWhatsappId(listing.sellerId);
+        if (seller) User.update(listing.sellerId, { currency: (seller.currency || 0) + listing.price });
+      }
+      transfer.transferPlayer(player.id, listing.sellerId, id);
+      db.update('market', listing.id, { sold: true });
+      reload();
+      return send(res, 200, { ok: true, user: publicUser(db.findById('users', id)), player: { id: player.id, name: Player.displayName(player) } });
+    }
+
+    // ── MARKET: list a player (or your whole squad) for sale ──
+    if (p === '/api/market/list' && req.method === 'POST') {
+      const body = await readBody(req);
+      const id = authenticate(body.token);
+      if (!id) return send(res, 401, { error: 'Not logged in.' });
+      reload();
+      const squad = !!body.squad;
+      const price = parseInt(body.price, 10);
+      if (squad) {
+        const players = Player.getSquadPlayers(id);
+        if (!players.length) return send(res, 400, { error: 'You have no players to list.' });
+        let listed = 0;
+        for (const pl of players) {
+          if (pl.isListed) continue;
+          const mv = Player.marketValue(pl);
+          const listPrice = price > 0 ? price : mv;
+          const minPrice = Math.round(mv * MARKET.MIN_PRICE_RATIO);
+          if (listPrice < minPrice) continue;
+          const lid = uuid();
+          db.insert('market', lid, {
+            id: lid, playerId: pl.id, sellerId: id,
+            sellerName: (db.findById('users', id) || {}).name || 'Manager',
+            price: listPrice, listedAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + MARKET.USER_LISTING_TTL_MS).toISOString(), sold: false,
+          });
+          Player.update(pl.id, { isListed: true, marketPrice: listPrice });
+          listed++;
+        }
+        if (!listed) return send(res, 400, { error: 'Nothing to list (already listed or below minimum price).' });
+        reload();
+        return send(res, 200, { ok: true, listed, user: publicUser(db.findById('users', id)) });
+      }
+      const playerId = String(body.playerId || '').toUpperCase();
+      if (!playerId || !price || price <= 0) return send(res, 400, { error: 'Usage: playerId + price required.' });
+      const player = Player.getByOwner(id).find((pl) => pl.id.startsWith(playerId));
+      if (!player) return send(res, 404, { error: 'Player not found in your squad.' });
+      if (player.isListed) return send(res, 400, { error: 'Player already listed.' });
+      const mv = Player.marketValue(player);
+      const minPrice = Math.round(mv * MARKET.MIN_PRICE_RATIO);
+      if (price < minPrice) return send(res, 400, { error: `Minimum price is ${minPrice} (50% of market value ${mv}).` });
+      const lid = uuid();
+      db.insert('market', lid, {
+        id: lid, playerId: player.id, sellerId: id,
+        sellerName: (db.findById('users', id) || {}).name || 'Manager',
+        price, listedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + MARKET.USER_LISTING_TTL_MS).toISOString(), sold: false,
+      });
+      Player.update(player.id, { isListed: true, marketPrice: price });
+      reload();
+      return send(res, 200, { ok: true, listing: marketView(db.findById('market', lid), id), user: publicUser(db.findById('users', id)) });
+    }
+
+    // ── TRANSFER: dash / gift a player (or whole squad) to another manager ──
+    if (p === '/api/market/dash' && req.method === 'POST') {
+      const body = await readBody(req);
+      const id = authenticate(body.token);
+      if (!id) return send(res, 401, { error: 'Not logged in.' });
+      const targetName = String(body.target || '').trim().toLowerCase();
+      if (!targetName) return send(res, 400, { error: 'Recipient team name required.' });
+      reload();
+      const me = db.findById('users', id);
+      if (!me || !me.registered) return send(res, 404, { error: 'Account not found.' });
+      const them = db.all('users').find((u) => u.registered && (u.name || '').trim().toLowerCase() === targetName);
+      if (!them) return send(res, 404, { error: 'No registered manager with that team name.' });
+      if (them.whatsappId === id) return send(res, 400, { error: 'You cannot dash to yourself.' });
+      const squad = !!body.squad || !body.playerId;
+      if (squad) {
+        const players = Player.getSquadPlayers(id);
+        if (!players.length) return send(res, 400, { error: 'You have no players to dash.' });
+        let moved = 0;
+        for (const pl of players) { if (pl.isListed) continue; transfer.transferPlayer(pl.id, id, them.whatsappId); moved++; }
+        if (!moved) return send(res, 400, { error: 'Nothing dashed (all players are listed).' });
+        reload();
+        return send(res, 200, { ok: true, moved, to: them.name, user: publicUser(db.findById('users', id)) });
+      }
+      const playerId = String(body.playerId || '').toUpperCase();
+      const player = Player.getByOwner(id).find((pl) => pl.id.startsWith(playerId));
+      if (!player) return send(res, 404, { error: 'Player not found in your squad.' });
+      if (player.isListed) return send(res, 400, { error: 'Cancel the market listing first.' });
+      transfer.transferPlayer(player.id, id, them.whatsappId);
+      reload();
+      return send(res, 200, { ok: true, moved: 1, to: them.name, player: Player.displayName(player), user: publicUser(db.findById('users', id)) });
     }
 
     // ── SHOP: OPEN PACK ──
