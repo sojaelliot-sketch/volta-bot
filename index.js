@@ -13,7 +13,6 @@ const qrcode = require('qrcode-terminal');
 const pino = require('pino');
 
 const logger = require('./utils/logger');
-const { formatChatName, formatSenderName, formatMessageText } = require('./utils/logger');
 const { connectDB } = require('./config/database');
 const router = require('./commands/router');
 const { sendText } = require('./utils/messaging');
@@ -107,11 +106,6 @@ async function startBot() {
     if (type !== 'notify') return;
     for (const msg of messages) {
       if (!msg.message) continue;
-      // Log incoming message
-      const chatName = formatChatName(sock, msg.key.remoteJid);
-      const senderName = formatSenderName(sock, msg);
-      const text = formatMessageText(msg);
-      logger.info({ chat: chatName, sender: senderName, text }, 'INCOMING');
       // The bot runs on the host's own WhatsApp account, so the host's
       // commands arrive as fromMe:true. We must NOT drop them — otherwise the
       // owner can never drive their own bot. Bot replies never start with '!'

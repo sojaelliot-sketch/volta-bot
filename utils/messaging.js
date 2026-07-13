@@ -1,5 +1,4 @@
 const logger = require('./logger');
-const { formatChatName } = require('./logger');
 
 async function sendText(sock, jid, text, quoted = null, mentions = null) {
   const content = { text };
@@ -7,8 +6,7 @@ async function sendText(sock, jid, text, quoted = null, mentions = null) {
   const opts = quoted ? { quoted } : undefined;
   try {
     const result = await sock.sendMessage(jid, content, opts);
-    const chatName = formatChatName(sock, jid);
-    logger.info({ chat: chatName, sender: 'BOT (You)', text: text.slice(0, 200) }, 'OUTGOING');
+    logger.info({ jid, response: text.slice(0, 120) }, 'response sent');
     return result;
   } catch (err) {
     logger.error({ err, jid, quoted: Boolean(quoted) }, 'Failed to send message');
@@ -17,8 +15,7 @@ async function sendText(sock, jid, text, quoted = null, mentions = null) {
     }
     try {
       const result = await sock.sendMessage(jid, content);
-      const chatName = formatChatName(sock, jid);
-      logger.info({ chat: chatName, sender: 'BOT (You)', text: text.slice(0, 200) }, 'OUTGOING (retry)');
+      logger.info({ jid, response: text.slice(0, 120) }, 'response sent (retry without quote)');
       return result;
     } catch (secondaryErr) {
       logger.error({ err: secondaryErr, jid }, 'Failed to send message without quote');
