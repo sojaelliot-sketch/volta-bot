@@ -9,6 +9,14 @@ const MENU = `⚽ *VOLTA* — ${BRAND}
 !register [name] — 📝 Profile + free pack
 !help / !menu — 📖 This menu
 
+*🌐 WEB MANAGER*
+!password [pwd] — 🔑 Set a password for the web app
+🌍 Manage your team on the web:
+   https://sojaelliot-sketch.github.io/volta-bot/
+   • Log in with your TEAM NAME + the password above
+   • Build your squad, open packs & train players
+   • Play live Penalty shootouts + coinflip / slot / high-low
+
 *⚔️ MATCHES*
 !play — 🆚 vs Medium AI
 !play easy / hard — 🟢 / 🔴
