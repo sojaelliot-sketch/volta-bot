@@ -464,12 +464,17 @@ const server = http.createServer(async (req, res) => {
       if ((u.currency || 0) < listing.price) return send(res, 400, { error: `Not enough Metaworks. Need ${listing.price}.` });
       const player = Player.getById(listing.playerId);
       if (!player) return send(res, 404, { error: 'Player not found.' });
+      const moved = transfer.transferPlayer(player.id, listing.sellerId, id);
+      if (!moved) {
+        return send(res, 409, {
+          error: 'Transfer blocked: this listing is invalid (seller no longer owns the player). It has been removed; no Metaworks were charged.',
+        });
+      }
       User.update(id, { currency: (u.currency || 0) - listing.price });
       if (listing.sellerId !== transfer.HOUSE) {
         const seller = User.getByWhatsappId(listing.sellerId);
         if (seller) User.update(listing.sellerId, { currency: (seller.currency || 0) + listing.price });
       }
-      transfer.transferPlayer(player.id, listing.sellerId, id);
       db.update('market', listing.id, { sold: true });
       reload();
       return send(res, 200, { ok: true, user: publicUser(db.findById('users', id)), player: { id: player.id, name: Player.displayName(player) } });

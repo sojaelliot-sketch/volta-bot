@@ -70,14 +70,16 @@ function processExpired(sock) {
     const seller = User.getByWhatsappId(l.sellerId);
     if (player && seller) {
       const payout = Player.marketValue(player);
-      User.update(l.sellerId, { currency: (seller.currency || 0) + payout });
-      transfer.transferPlayer(player.id, l.sellerId, transfer.HOUSE);
-      if (sock) {
+      const moved = transfer.transferPlayer(player.id, l.sellerId, transfer.HOUSE);
+      if (moved) {
+        User.update(l.sellerId, { currency: (seller.currency || 0) + payout });
+        if (sock) {
         sendText(sock, l.sellerId,
           `⏰ *LISTING EXPIRED* 🏦\n━━━━━━━━━━━━━━━━━━━━━━━\n` +
           `*${Player.displayName(player)}* didn't sell in 10 min.\n` +
           `The house bought it for *${money(payout)}* (market value) and it's now on the AI Market.`, undefined)
-          .catch(() => {});
+           .catch(() => {});
+        }
       }
     }
     db.update(MARKET_TABLE, l.id, { sold: true });
@@ -158,10 +160,21 @@ async function cmdBuy({ sock, msg, jid, sender, user, args }) {
     return;
   }
 
-  // Process transfer
+  // Process transfer. Do this BEFORE touching coins so a spoofed/orphaned
+  // listing (sellerId does not match the player's real owner) is rejected
+  // cleanly — the buyer is never charged for a player they can't receive.
   const player = Player.getById(listing.playerId);
   if (!player) {
     await sendText(sock, jid, `❌ Player not found in database.`, msg);
+    return;
+  }
+
+  const moved = transfer.transferPlayer(player.id, listing.sellerId, sender);
+  if (!moved) {
+    await sendText(sock, jid,
+      `❌ *Transfer blocked.* This listing's seller no longer owns the player — the listing was invalid and has been removed. No coins were charged.`,
+      msg);
+    db.update(MARKET_TABLE, listing.id, { sold: true });
     return;
   }
 
@@ -175,10 +188,6 @@ async function cmdBuy({ sock, msg, jid, sender, user, args }) {
       User.update(listing.sellerId, { currency: (seller.currency || 0) + listing.price });
     }
   }
-
-  // Transfer the player from the seller into the buyer's reserves (also strips
-  // it from the seller's squad lists and clears listing flags).
-  transfer.transferPlayer(player.id, listing.sellerId, sender);
 
   // Mark listing as sold
   db.update(MARKET_TABLE, listing.id, { sold: true });

@@ -5,6 +5,7 @@
 const User = require('../models/User');
 const Player = require('../models/Player');
 const transfer = require('../models/transfer');
+const db = require('../config/database');
 const { buildPlayer } = require('../utils/playerGenerator');
 const { AUCTION, BRAND, RARITY } = require('../config/constants');
 const { money, bar } = require('../utils/formatter');
@@ -88,10 +89,36 @@ async function handle({ sock, msg, jid, sender, cmd, args }) {
       let item;
       const givenId = args[1];
       if (givenId && givenId !== 'auto') {
-        // Resolve by exact id first, then by id prefix / name across the WHOLE
-        // pool (an officer/owner can auction any player, not just ones they own).
-        item = Player.getById(givenId) || Player.findAny(givenId);
-        if (!item) { await sendText(sock, jid, `❌ Player *${givenId}* not found.`, msg); return; }
+        // A market listing UUID (e.g. "cfea53b5-…") is NOT a player id — if the
+        // user pasted one, resolve it to the player it lists so they aren't
+        // stuck on a "player not found" error.
+        if (givenId.includes('-')) {
+          const listing = db.all('market').find((l) => l.id.startsWith(givenId) && !l.sold);
+          if (listing) item = Player.getById(listing.playerId);
+        }
+        // Otherwise resolve by exact id first, then by id prefix / name across
+        // the WHOLE pool (an officer/owner can auction any player, not just the
+        // ones they own).
+        if (!item) item = Player.getById(givenId) || Player.findAny(givenId);
+        if (!item) {
+          await sendText(sock, jid,
+            `❌ Player *${givenId}* not found.\n` +
+            `Use a player's CVC id from *!squad* (e.g. \`NAK\`), not a market listing ID. ` +
+            `You can also auction a market player by pasting its listing ID.`, msg);
+          return;
+        }
+        // A host may only auction a HOUSE / club player or one they personally
+        // own. Auctioning another manager's player would strip it from them,
+        // which is not allowed ("you can't auction people's players").
+        const ownerIsHouseOrClub =
+          item.ownerId === transfer.HOUSE || String(item.ownerId || '').startsWith('club:');
+        const ownerIsHost = User.normalizeJid(item.ownerId) === User.normalizeJid(sender);
+        if (!ownerIsHouseOrClub && !ownerIsHost) {
+          await sendText(sock, jid,
+            `⛔ You can't auction *${Player.displayName(item)}* — it belongs to another manager. ` +
+            `Auction a house/club player (*!auction start auto*) or one of your own.`, msg);
+          return;
+        }
       } else {
         item = buildPlayer(sender, AUCTION.HIGH_PLAYER_RARITY);
       }
