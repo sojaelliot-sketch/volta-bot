@@ -23,6 +23,7 @@ const handlers = {
   match: () => require('./match'),
   challenge: () => require('./match'),
   accept: () => require('./match'),
+  forfeit: () => require('./match'),
   sub: () => require('./match'),
   a: () => require('./match'),
   b: () => require('./match'),
@@ -215,13 +216,19 @@ async function handle(sock, msg) {
     }
 
     // ── cooldown + spam warnings + 3-strike auto-ban ──
-    // Live gameplay reactions (chances, penalty shots) must NOT be rate-limited,
-    // or legit fast play would get flagged as spam.
+    // Applies to EVERY command (including owner/staff) so the bot can't be
+    // flooded. Live gameplay reactions (chances, penalty shots, subs) must NOT
+    // be rate-limited, or legit fast play would get flagged as spam. Owner/staff
+    // still get the cooldown but are never auto-banned for it.
     const LIVE_CMDS = new Set(['a', 'b', 'c', 'd', 'chance', 'shoot', 'save', 'sub']);
-    if (!isExempt(sender, user) && !LIVE_CMDS.has(cmd)) {
+    if (!LIVE_CMDS.has(cmd)) {
       const now  = Date.now();
       const last = lastCommandAt.get(sender) || 0;
       if (now - last < MODERATION.COOLDOWN_MS) {
+        if (isExempt(sender, user)) {
+          await sendText(sock, jid, `⏳ Easy! Wait a moment between commands.`, msg);
+          return;
+        }
         const w = (warnCount.get(sender) || 0) + 1;
         warnCount.set(sender, w);
         if (w >= MODERATION.WARNINGS_BEFORE_BAN) {
@@ -238,8 +245,10 @@ async function handle(sock, msg) {
     }
 
     // ── PvP command lock ──
-    if (isChatLocked(jid, sender)) {
-      await sendText(sock, jid, `🔒 A match is in progress in this chat — commands are locked until it finishes.`, msg);
+    // Only the two players in the match may use commands while it's live; the
+    // owner (and staff) are exempt so they can still operate in the chat.
+    if (isChatLocked(jid, sender) && !User.isOwner(sender) && !User.isStaff(user)) {
+      await sendText(sock, jid, `🔒 A match is in progress in this chat — commands are locked to the players until it finishes.`, msg);
       return;
     }
 

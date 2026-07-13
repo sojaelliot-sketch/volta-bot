@@ -559,6 +559,19 @@ async function forfeitPvP(s, offenderId, winnerId) {
   await finishPvP(s);
 }
 
+// Forfeit the PvP match the given user is part of. If the caller is a participant
+// they forfeit (opponent wins); the owner may also force-forfeit any match.
+async function forfeitPvPForUser(sender) {
+  const s = getActivePvPForUser(sender);
+  if (!s) return null;
+  let offender, winner;
+  if (sender === s.homeId) { offender = s.homeId; winner = s.awayId; }
+  else if (sender === s.awayId) { offender = s.awayId; winner = s.homeId; }
+  else { offender = s.homeId; winner = s.awayId; } // owner override on others' match
+  await forfeitPvP(s, offender, winner);
+  return s;
+}
+
 async function finishPvP(s) {
   clearPvpTimer(s);
   pvpChances.delete(s.matchId);
@@ -917,4 +930,4 @@ function clearAllPvP() {
   return cleared;
 }
 
-module.exports = { startMatch, isChatLocked, getActivePvPForUser, applySub, getPvpSessionFor, resolveChance, clearAllPvP };
+module.exports = { startMatch, isChatLocked, getActivePvPForUser, applySub, getPvpSessionFor, resolveChance, clearAllPvP, forfeitPvPForUser };

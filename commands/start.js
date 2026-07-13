@@ -120,6 +120,7 @@ Example: *!register Elliot*
 
   if (referrer) {
     reveal += `\n🤝 Referred by *${referrer.name}*! You both earned bonus Metaworks.`;
+    reveal += `\n👥 Join the VOLTA community group: https://chat.whatsapp.com/FD6Mvmdq8wUE1EhSB78xAd`;
   }
   reveal += `
 📋 *!squad* — View your team

@@ -1,11 +1,16 @@
 const User = require('../models/User');
 const Player = require('../models/Player');
 const { MATCH } = require('../config/constants');
-const { startMatch, getActivePvPForUser, applySub, getPvpSessionFor, resolveChance } = require('../game-engine/matchSession');
+const { startMatch, getActivePvPForUser, applySub, getPvpSessionFor, resolveChance, forfeitPvPForUser } = require('../game-engine/matchSession');
 const { sendText } = require('../utils/messaging');
 
-// pendingChallenges: targetJid -> challengerJid
+// pendingChallenges: targetJid -> { challenger, expires }
 const pendingChallenges = new Map();
+const CHALLENGE_TTL_MS = 2 * 60 * 1000;
+
+function challengeExpired(entry) {
+  return entry && entry.expires && entry.expires < Date.now();
+}
 // lastPlayAt: sender -> timestamp (cooldown between matches, AI + PvP)
 const lastPlayAt = new Map();
 
@@ -46,6 +51,26 @@ async function handle({ sock, msg, jid, sender, cmd, args, replyTo, mentioned })
     }
     const res = applySub(session, sender, args);
     await sendText(sock, jid, res.msg, msg);
+    return;
+  }
+
+  if (cmd === 'forfeit') {
+    const session = getActivePvPForUser(sender);
+    const isParticipant = session && (sender === session.homeId || sender === session.awayId);
+    if (!session || (!isParticipant && !User.isOwner(sender))) {
+      await sendText(sock, jid, `❌ You can only forfeit a PvP match you're playing in. (Owners may force-forfeit any match.)`, msg);
+      return;
+    }
+    const ended = await forfeitPvPForUser(sender);
+    if (!ended) {
+      await sendText(sock, jid, `❌ No active PvP match found to forfeit.`, msg);
+      return;
+    }
+    const me = User.getByWhatsappId(sender);
+    await sendText(sock, jid,
+      `🚩 *MATCH FORFEITED*\n━━━━━━━━━━━━━━\n` +
+      `The match between *${ended.homeName}* and *${ended.awayName}* has ended by forfeit.\n` +
+      (User.isOwner(sender) && !isParticipant ? `(Force-forfeited by owner ${me?.name || ''}.)` : `You threw in the towel.`), msg);
     return;
   }
 
@@ -119,36 +144,49 @@ async function handle({ sock, msg, jid, sender, cmd, args, replyTo, mentioned })
     }
     const tUser = User.getByWhatsappId(target);
     if (!tUser || !tUser.registered) {
-      await sendText(sock, jid, `❌ That user isn't registered yet.`, msg);
+      await sendText(sock, jid, `❌ That user isn't registered yet. Ask them to *!start* first.`, msg);
+      return;
+    }
+    if (target === sender) {
+      await sendText(sock, jid, `😅 You can't challenge yourself!`, msg);
       return;
     }
     if (tUser.inMatch || myUser.inMatch) {
       await sendText(sock, jid, `❌ One of you is already in a match!`, msg);
       return;
     }
+    // drop any stale challenge for this target
+    pendingChallenges.delete(target);
 
-    pendingChallenges.set(target, sender);
+    pendingChallenges.set(target, { challenger: sender, expires: Date.now() + CHALLENGE_TTL_MS });
     await sendText(sock, jid,
-      `⚔️ *Challenge sent!*\n👤 ${User.getByWhatsappId(sender).name} challenged *${tUser.name}*.\n\n@${tUser.name} type *!accept* to begin the showdown! 🔥`, msg, [target]);
+      `⚔️ *Challenge sent!*\n👤 ${myUser.name} challenged *${tUser.name}*.\n\n@${tUser.name} type *!accept* to begin the showdown! 🔥`, msg, [target]);
 
     try {
       await sendText(sock, target,
-        `⚔️ *${User.getByWhatsappId(sender).name}* has challenged you to a VOLTA match!\nType *!accept* in your chat to start. 🔥`, msg);
+        `⚔️ *${myUser.name}* has challenged you to a VOLTA match!\nType *!accept* in your chat to start. 🔥`, msg);
     } catch {}
     return;
   }
 
   if (cmd === 'accept') {
-    const challenger = pendingChallenges.get(sender);
-    if (!challenger) {
-      await sendText(sock, jid, `❌ You have no pending challenge. Ask a friend to *!challenge* you!`, msg);
+    const entry = pendingChallenges.get(sender);
+    if (!entry || challengeExpired(entry)) {
+      pendingChallenges.delete(sender);
+      await sendText(sock, jid, `❌ You have no pending challenge (or it expired). Ask a friend to *!challenge* you!`, msg);
       return;
     }
+    const challenger = entry.challenger;
     pendingChallenges.delete(sender);
 
+    const myUser = User.getByWhatsappId(sender);
     const chUser = User.getByWhatsappId(challenger);
-    if (!chUser || !chUser.registered) {
-      await sendText(sock, jid, `❌ Your challenger is no longer available.`, msg);
+    if (!myUser || !myUser.registered) {
+      await sendText(sock, jid, `❌ You need to register first! Type *!start*.`, msg);
+      return;
+    }
+    if (!chUser || !chUser.registered || chUser.inMatch || myUser.inMatch) {
+      await sendText(sock, jid, `❌ Your challenger is no longer available (registered/in a match).`, msg);
       return;
     }
 
@@ -162,7 +200,7 @@ async function handle({ sock, msg, jid, sender, cmd, args, replyTo, mentioned })
     lastPlayAt.set(challenger, Date.now());
 
     await sendText(sock, jid,
-      `🥊 *MATCH ON!*\n👤 ${chUser.name} vs 🆚 ${User.getByWhatsappId(sender).name}\n⚡ Chances are coming — when it's YOUR turn, react with *!a / !b / !c* (the options shown in the chance)! 🔥`, msg);
+      `🥊 *MATCH ON!*\n👤 ${chUser.name} vs 🆚 ${myUser.name}\n⚡ Chances are coming — when it's YOUR turn, react with *!a / !b / !c* (the options shown in the chance)! 🔥`, msg);
 
     await startMatch(sock, challenger, sender, { chatJid: jid, isPvP: true, msg });
     return;

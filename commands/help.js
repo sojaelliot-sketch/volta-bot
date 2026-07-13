@@ -24,6 +24,7 @@ const MENU = `⚽ *VOLTA* — ${BRAND}
 !match [easy|medium|hard] — 🔒 Private AI match (locks the chat)
 !challenge @user — 🥊 PvP duel
 !accept — ✅ Accept
+!forfeit — 🚩 Forfeit your PvP match (owner can force any)
 !sub [outId] [inId] — 🔁 Sub (during PvP pause)
 
  *👥 SQUAD*
