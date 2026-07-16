@@ -3,12 +3,16 @@
 // Players are auto-paired; each tie has a deadline — if the players don't
 // resolve it (by playing a real PvP / penalty match, or via !tourneyplay),
 // it is auto-simulated from team strength when the deadline passes.
+//
+// Odd brackets: if the number of players is odd, one player draws a BYE in the
+// first round (a free pass to the next round) and receives a small consolation
+// reward for the walkover.
 const User = require('../models/User');
 const { TOURNAMENT, MATCH } = require('../config/constants');
 const { sendText } = require('../utils/messaging');
 const { pick } = require('../utils/random');
 
-let current = null; // { category, prize, host, chatJid, sock, rounds, startedAt, endsAt }
+let current = null; // { category, prize, host, chatJid, sock, players, rounds, startedAt, endsAt }
 
 function shuffle(a) {
   const r = a.slice();
@@ -19,10 +23,21 @@ function shuffle(a) {
   return r;
 }
 
-function toEven(arr) {
-  const a = arr.slice();
-  while (a.length % 2 !== 0) a.push('BYE');
-  return a;
+// ─── round labels for common bracket sizes ─────────────────────────────────
+function roundLabelForSize(size) {
+  switch (size) {
+    case 2:  return 'Final';
+    case 4:  return 'Semi-finals';
+    case 8:  return 'Quarter-finals';
+    case 16: return 'Round of 16';
+    default: return '';
+  }
+}
+
+function nameOf(x) {
+  if (!x || x === 'BYE') return 'BYE';
+  if (typeof x === 'object') return nameOf(x.winner) || 'TBD';
+  return User.getByWhatsappId(x)?.name || x.split('@')[0];
 }
 
 // a match participant is either a player jid, 'BYE', or a match object
@@ -33,8 +48,21 @@ function eff(x) {
 }
 
 function buildRounds(players) {
-  let cur = toEven(shuffle(players));
+  let cur = shuffle(players);
   const rounds = [];
+
+  // Odd number of players → one draws a BYE (free pass + consolation reward).
+  const odd = cur.length % 2 !== 0;
+  if (odd) {
+    const byeIdx = Math.floor(Math.random() * cur.length);
+    const byePlayer = cur.splice(byeIdx, 1)[0];
+    const u = User.getByWhatsappId(byePlayer);
+    if (u) User.update(byePlayer, { currency: (u.currency || 0) + TOURNAMENT.CONSOLATION_REWARD });
+    cur.push('BYE');
+    sendText(current.sock, current.chatJid,
+      `🎟️ *${nameOf(byePlayer)}* drew a BYE this round — free pass to the next round + *${TOURNAMENT.CONSOLATION_REWARD}* Metaworks! 🍀`);
+  }
+
   while (cur.length > 1) {
     const r = [];
     for (let i = 0; i < cur.length; i += 2) {
@@ -103,7 +131,7 @@ function start() {
   for (const round of current.rounds) {
     for (const m of round) {
       if (m.simulated || m.winner) continue;
-      setTimeout(() => autoSim(m), TOURNAMENT.MATCH_WINDOW_MS + 1000);
+      setTimeout(() => autoSim(m), TOURNAMENT.MATCH_WINDOW_MS + 1000).unref();
     }
   }
   return true;
@@ -125,11 +153,35 @@ function findMatch(a, b) {
   return null;
 }
 
+// Return the pending match (if any) for a single player.
+function pendingMatchFor(jid) {
+  for (const m of allMatches()) {
+    if (m.winner || m.simulated) continue;
+    const ea = eff(m.a), eb = eff(m.b);
+    if (ea === jid || eb === jid) return m;
+  }
+  return null;
+}
+
+// Find the opponent a player should face for their next tie, then return the
+// opponent jid so the caller can start a real PvP match. Returns null if the
+// player has no pending tie.
+function startTChallenge(jid) {
+  const m = pendingMatchFor(jid);
+  if (!m) return null;
+  const opp = eff(m.a) === jid ? eff(m.b) : eff(m.a);
+  return opp && opp !== 'BYE' ? opp : null;
+}
+
 // Called when a real match between a and b finishes with winnerId.
 function resolveByResult(a, b, winnerId) {
   if (!current || !current.rounds) return false;
   const m = findMatch(a, b);
   if (!m) return false;
+  return recordWinner(m, winnerId);
+}
+
+function recordWinner(m, winnerId) {
   m.winner = winnerId;
   m.simulated = false;
   checkComplete();
@@ -167,6 +219,10 @@ function checkComplete() {
   pay(runnerUp, Math.round(current.prize * 0.4));
   semiLosers.forEach((j) => pay(j, Math.round(current.prize * 0.15)));
 
+  // track tournament wins
+  const wu = User.getByWhatsappId(winner);
+  if (wu) User.update(winner, { tournamentWins: (wu.tournamentWins || 0) + 1 });
+
   const wName = User.getByWhatsappId(winner)?.name || '???';
   const mentions = [winner, runnerUp].filter(Boolean);
   sendText(current.sock, current.chatJid,
@@ -186,5 +242,6 @@ function summary() {
 
 module.exports = {
   isActive, cancel, create, addPlayer, start, resolveByResult, findMatch,
-  allMatches, summary, teamStrength, eff,
+  allMatches, summary, teamStrength, eff, pendingMatchFor, startTChallenge,
+  roundLabelForSize,
 };

@@ -110,13 +110,6 @@ module.exports = {
     ],
   },
 
-  // ─── TOURNAMENT ────────────────────────────────────────────────────────
-  TOURNAMENT: {
-    ENTRY_FEE: 300,
-    REWARDS:   { winner: 1500, runner_up: 600, semi: 250 },
-    MAX_PLAYERS: 8,
-  },
-
   // ─── AI ────────────────────────────────────────────────────────────────
   AI: {
     EASY:   { statBase: 55, randomness: 0.4 },
@@ -242,6 +235,7 @@ module.exports = {
       penalty: { label: 'Penalty Shootout', simulate: 'penalty' },
     },
     REWARDS_BY_ROUND: { winner: 1500, runner_up: 600, semi: 250 },
+    CONSOLATION_REWARD: 3, // Metaworks for the player who drew a BYE in an odd bracket
   },
 
   // ─── PENALTY SHOOTOUT MINI-GAME ─────────────────────────────────────────

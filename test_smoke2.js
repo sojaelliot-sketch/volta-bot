@@ -63,6 +63,8 @@ async function run(label, text, sender) {
   await run('join2', '!join', U2);
   await run('tournament end', '!tournament end', OWNER);
   await run('tourneyplay', '!tourneyplay', U1);
+  await run('bracket', '!bracket', U1);
+  await run('tchallenge (no tie)', '!tchallenge', U1);
 
   // PvP interactive
   const ch = await run('challenge', '!challenge 2222222222', U1);

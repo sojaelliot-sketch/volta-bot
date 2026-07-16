@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const Player = require('../models/Player');
+const tourney = require('../game-engine/tournament');
 const { MATCH } = require('../config/constants');
 const { startMatch, getActivePvPForUser, getActiveMatchForUser, applySub, getPvpSessionFor, resolveChance, forfeitPvPForUser } = require('../game-engine/matchSession');
 const { sendText } = require('../utils/messaging');
@@ -220,6 +221,45 @@ async function handle({ sock, msg, jid, sender, cmd, args, replyTo, mentioned })
       `🥊 *MATCH ON!*\n👤 ${chUser.name} vs 🆚 ${myUser.name}\n⚡ Chances are coming — when it's YOUR turn, react with *!a / !b / !c* (the options shown in the chance)! 🔥`, msg);
 
     await startMatch(sock, challenger, sender, { chatJid: jid, isPvP: true, msg });
+    return;
+  }
+
+  if (cmd === 'tchallenge') {
+    if (!tourney.isActive() || !tourney.summary().rounds) {
+      await sendText(sock, jid, `ℹ️ No active tournament bracket to challenge within.`, msg);
+      return;
+    }
+    const myUser = User.getByWhatsappId(sender);
+    if (!myUser || !myUser.registered) {
+      await sendText(sock, jid, '❌ You need to register first! Type *!start*.', msg);
+      return;
+    }
+    healIfStuck(myUser);
+    const wait = matchCooldownLeft(sender);
+    if (wait > 0) {
+      await sendText(sock, jid, `⏳ Match cooldown — you can challenge again in *${Math.ceil(wait / 1000)}s*.`, msg);
+      return;
+    }
+    const opponent = tourney.startTChallenge(sender);
+    if (!opponent) {
+      await sendText(sock, jid, `ℹ️ You have no pending tournament tie (or it already resolved). Use *!bracket* to check.`, msg);
+      return;
+    }
+    const oppUser = User.getByWhatsappId(opponent);
+    const oppName = oppUser?.name || opponent.split('@')[0];
+    if (oppUser?.inMatch || myUser.inMatch) {
+      await sendText(sock, jid, `❌ You or your opponent is already in a match!`, msg);
+      return;
+    }
+    if (oppUser && oppUser.whatsappId === sender) {
+      await sendText(sock, jid, `😅 That's a BYE — no opponent to challenge. You advance automatically!`, msg);
+      return;
+    }
+    lastPlayAt.set(sender, Date.now());
+    lastPlayAt.set(opponent, Date.now());
+    await sendText(sock, jid,
+      `🏆 *TOURNAMENT TIE!*\n👤 ${myUser.name} vs 🆚 ${oppName}\n⚡ Chances are coming — when it's YOUR turn, react with *!a / !b / !c*! 🔥\n(Win to advance in the bracket.)`, msg, [opponent]);
+    await startMatch(sock, sender, opponent, { chatJid: jid, isPvP: true, msg });
     return;
   }
 }
