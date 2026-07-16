@@ -145,6 +145,15 @@ async function main() {
   await connectDB();
   await startBot();
   startTipScheduler(() => activeSock, 60 * 1000);
+
+  // Keep the bot's in-memory cache in sync with the web server (and any other
+  // writer) so actions taken on one side are always visible on the other. The
+  // DB layer already re-syncs on every mutation; this periodic reload just
+  // refreshes read paths (e.g. !squad right after a web-side action) without
+  // waiting for the next command. Cheap and keeps both processes coherent.
+  setInterval(() => {
+    try { db.reloadAll(); } catch (err) { logger.error({ err }, 'Periodic reload failed'); }
+  }, 60 * 1000).unref();
 }
 
 main().catch((err) => {
