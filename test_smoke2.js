@@ -66,6 +66,20 @@ async function run(label, text, sender) {
   await run('bracket', '!bracket', U1);
   await run('tchallenge (no tie)', '!tchallenge', U1);
 
+  // Phase 2 commands
+  await run('profile', '!profile', U1);
+  await run('info self', '!info', U1);
+  await run('setname', '!setname Tester', U1);
+  await run('reserve noarg', '!reserve', U1);
+  await run('academy', '!academy', U1);
+  await run('scout new', '!scout', U1);
+  await run('academy after', '!academy', U1);
+  await run('password', '!password secret123', U1);
+  await run('ping (owner)', '!ping', OWNER);
+  await run('debug (owner)', '!debug', OWNER);
+  await run('setbounty', '!setbounty 100 2222222222', OWNER);
+  await run('broadcast (owner)', '!broadcast Hello everyone', OWNER);
+
   // PvP interactive
   const ch = await run('challenge', '!challenge 2222222222', U1);
   console.log('DBG challenge sent:', JSON.stringify(sent.map(s => (s.c?.text || '').replace(/\n/g, ' ').slice(0, 70))));

@@ -142,6 +142,7 @@ async function startBot() {
 }
 
 async function main() {
+  globalThis.__botStartTime = Date.now();
   await connectDB();
   await startBot();
   startTipScheduler(() => activeSock, 60 * 1000);

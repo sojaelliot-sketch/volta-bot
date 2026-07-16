@@ -62,10 +62,21 @@ async function handle({ sock, msg, jid, sender, args, replyTo, mentioned }) {
   User.update(targetJid, { passwordHash: hash, passwordSalt: salt });
 
   const who = targetJid === sender ? 'Your' : `*${targetJid}*'s`;
-  await sendText(sock, jid,
+  const confirmKey = await sendText(sock, jid,
     `🔐 ${who} web-app password is set!\n\n` +
     `🌐 Open the VOLTA web app and log in with this password to manage your team.\n` +
     `Powered by ${BRAND}`, msg);
+
+  // Auto-delete the confirmation after 5s so the password hint doesn't linger
+  // in the chat history (the password itself is never printed).
+  setTimeout(() => {
+    try {
+      if (confirmKey?.key) sock.sendMessage(jid, { delete: confirmKey.key });
+      else if (confirmKey) sock.sendMessage(jid, { delete: confirmKey });
+    } catch {
+      // best-effort cleanup
+    }
+  }, 5000).unref();
 }
 
 // Exposed so the web server can verify passwords with the exact same algorithm.
