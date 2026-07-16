@@ -78,6 +78,8 @@ module.exports = {
     CONDITION_DECAY_TRAINING: 3,
     FORM_BOOST_PCT:    5,
     CHEMISTRY_CAP:     1.15,
+    MATCH_GAIN:        2,    // chemistry gained per match a player features in
+    PRICE_GROWTH_GOAL: 0.02, // market value multiplier per goal scored in good form
     POTENTIAL_WEIGHTS: {
       Common:    { Low: 50, Medium: 40, High: 10, Star: 0  },
       Rare:      { Low: 20, Medium: 45, High: 30, Star: 5  },
@@ -100,6 +102,9 @@ module.exports = {
     WIN:  25,
     DRAW:  5,
     LOSS: -15,
+    // Matches against easier AI yield less MMR; harder AI yields more. Applied
+    // to both the winner and loser deltas so the ladder stays meaningful.
+    DIFFICULTY_SCALE: { Easy: 0.6, Medium: 1.0, Hard: 1.4 },
     RANKS: [
       { label: 'Bronze',   min: 0    },
       { label: 'Silver',   min: 1100 },

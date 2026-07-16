@@ -79,6 +79,9 @@ async function run(label, text, sender) {
   await run('debug (owner)', '!debug', OWNER);
   await run('setbounty', '!setbounty 100 2222222222', OWNER);
   await run('broadcast (owner)', '!broadcast Hello everyone', OWNER);
+  await run('topchem', '!topchem', U1);
+  // verify an AI match still completes and awards MMR (difficulty scaling)
+  await run('play easy', '!play easy', U1);
 
   // PvP interactive
   const ch = await run('challenge', '!challenge 2222222222', U1);

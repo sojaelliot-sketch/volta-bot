@@ -42,6 +42,7 @@ const handlers = {
   list: () => require('./market'),
   search: () => require('./search'),
   find: () => require('./search'),
+  topchem: () => require('./topchem'),
   swap: () => require('./swap'),
   move: () => require('./swap'),
   autosquad: () => require('./autosquad'),

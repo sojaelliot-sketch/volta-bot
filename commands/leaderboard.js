@@ -50,7 +50,8 @@ async function handle({ sock, msg, jid, sender, args }) {
   let out = `📊 *VOLTA LEADERBOARD* — ${cat.label}\n━━━━━━━━━━━━━━━━━━━━━━━\n`;
   top.forEach((u, i) => {
     const medal = MEDALS[i] || `${i + 1}.`;
-    out += `${medal} *${u.name}* — ${cat.fmt(cat.get(u))} (${u.rank || 'Bronze'})\n`;
+    const crown = User.isOwner(u.whatsappId) ? ' 👑' : '';
+    out += `${medal} *${u.name}*${crown} — ${cat.fmt(cat.get(u))} (${u.rank || 'Bronze'})\n`;
   });
 
    const me = User.getByWhatsappId(sender);

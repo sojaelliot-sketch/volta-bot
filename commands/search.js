@@ -47,7 +47,7 @@ async function handle({ sock, msg, jid, sender, args, user }) {
     const club = clubName(p.ownerId);
     const l = listingByPlayer[p.id];
     text += `${emoji} *${p.name}* ${role}\n`;
-    text += `   ${p.rarity} · ${club} · OVR ${total} · ❤️ ${bar(p.condition)}\n`;
+    text += `   ${p.rarity} · ${club} · OVR ${total} · 🤝 ${p.chemistry || 0}% chem · ❤️ ${bar(p.condition)}\n`;
     if (l) {
       const short = l.id.slice(0, 6);
       text += `   💰 ${money(l.price)} · 🆔 \`${short}\` — *!buy ${short}*\n`;

@@ -68,14 +68,10 @@ async function cmdSquad({ sock, msg, jid, sender, user }) {
   text += `\n\n*🪑 BENCH* (${bench.length}/${SQUAD.BENCH_SIZE})\n`;
   text += bench.length ? bench.map((p) => squadRow(p, '⏸️')).join('\n') : '_empty_';
 
-  if (reserves.length) {
-    text += `\n\n*📦 RESERVES* (${reserves.length})\n`;
-    text += reserves.map((p) => squadRow(p, '  ')).join('\n');
-  }
-
-   text += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━
+   text += `\n\n━━━━━━━━━━━━━━━━━━━━━━
 💡 *!card [id]* — Full player card
 💡 *!bench [id]* — Move to bench
+💡 *!reserve* — View & manage Reserves
 💡 *!rename [id] [name]* — Custom name`;
 
   await sendText(sock, jid, text, msg);

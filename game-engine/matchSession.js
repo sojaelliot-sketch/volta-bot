@@ -6,7 +6,7 @@ const comm    = require('./commentary');
 const ai      = require('../ai/aiOpponent');
 const tourney = require('./tournament');
 const situ    = require('./situations');
-const { MATCH, ECONOMY, MMR, BRAND, INJURY } = require('../config/constants');
+const { MATCH, ECONOMY, MMR, BRAND, INJURY, PLAYER } = require('../config/constants');
 const { pick, clamp, randInt } = require('../utils/random');
 const { sleep, sendText } = require('../utils/messaging');
 const logger  = require('../utils/logger');
@@ -61,6 +61,31 @@ function squadStrength(squad) {
       ? (s.reflex + s.positioning + s.anticipation + s.composure || 240)
       : (s.pace + s.skill + s.shooting + s.stamina + s.composure || 300));
   }, 0);
+}
+
+// MMR multiplier for the chosen AI difficulty. Easier opponents = smaller
+// swings so the ladder can't be farmed on Easy.
+function mmrScale(difficulty) {
+  return MMR.DIFFICULTY_SCALE[difficulty] || 1.0;
+}
+
+// After a match, fielded players grow squad chemistry (the longer a core plays
+// together, the stronger their understanding) and see modest price growth when
+// they score in good form. Capped so it can't run away.
+function postMatchGrowth(squad, scorerIds) {
+  const scored = new Set(scorerIds || []);
+  for (const p of squad) {
+    if (!p.id) continue;
+    const cur = Player.getById(p.id);
+    if (!cur) continue;
+    const chem = Math.min(100, (cur.chemistry || 0) + PLAYER.MATCH_GAIN);
+    const patch = { chemistry: chem };
+    if (scored.has(p.id) && (cur.form === 'Hot' || cur.form === 'Normal')) {
+      const base = cur.marketValue || 0;
+      if (base) patch.marketValue = Math.round(base * (1 + PLAYER.PRICE_GROWTH_GOAL));
+    }
+    Player.update(p.id, patch);
+  }
 }
 
 // Small random chance a player picks up an injury during a match. Returns the
@@ -733,6 +758,11 @@ async function finishPvP(s) {
   await decayConditions(s.homeSquad);
   await decayConditions(s.awaySquad);
 
+  // Chemistry + price growth from this match (PvP = full MMR, no difficulty scale).
+  const scorerIds = (s.goalScorers || []).map((g) => g.id).filter(Boolean);
+  postMatchGrowth(s.homeSquad, scorerIds);
+  postMatchGrowth(s.awaySquad, scorerIds);
+
   lockedChats.delete(s.chatJid);
 }
 
@@ -845,7 +875,8 @@ async function endMatch(session) {
     .join('\n');
 
   const homeReward = homeWon ? ECONOMY.WIN_REWARD : isDraw ? ECONOMY.DRAW_REWARD : ECONOMY.LOSS_REWARD;
-  const mmrDelta   = homeWon ? MMR.WIN : isDraw ? MMR.DRAW : MMR.LOSS;
+  const scale = mmrScale(session.aiDifficulty);
+  const mmrDelta   = Math.round((homeWon ? MMR.WIN : isDraw ? MMR.DRAW : MMR.LOSS) * scale);
 
   const h = User.getByWhatsappId(homeId) || {};
   User.update(homeId, {
@@ -950,6 +981,11 @@ async function endMatch(session) {
 
   await decayConditions(session.homeSquad);
   if (!isAI) await decayConditions(session.awaySquad);
+
+  // Chemistry + price growth from this match.
+  const scorerIds = (session.goalScorers || []).map((g) => g.id).filter(Boolean);
+  postMatchGrowth(session.homeSquad, scorerIds);
+  if (!isAI) postMatchGrowth(session.awaySquad, scorerIds);
 }
 
 function calcRank(mmr) {

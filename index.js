@@ -14,6 +14,7 @@ const pino = require('pino');
 
 const logger = require('./utils/logger');
 const { connectDB } = require('./config/database');
+const User = require('./models/User');
 const router = require('./commands/router');
 const { sendText } = require('./utils/messaging');
 const { BRAND } = require('./config/constants');
@@ -154,6 +155,23 @@ async function main() {
   // waiting for the next command. Cheap and keeps both processes coherent.
   setInterval(() => {
     try { db.reloadAll(); } catch (err) { logger.error({ err }, 'Periodic reload failed'); }
+  }, 60 * 1000).unref();
+
+  // Anti-break safety net: heal any user flagged inMatch whose match session no
+  // longer exists (crash / restart / stuck PvP). Without this, a player could be
+  // permanently locked out of !play. Runs every minute.
+  setInterval(() => {
+    try {
+      const { getActiveMatchForUser } = require('./game-engine/matchSession');
+      const users = User.all();
+      for (const u of users) {
+        if (u.inMatch && !getActiveMatchForUser(u.whatsappId)) {
+          User.update(u.whatsappId, { inMatch: false, currentMatchId: null });
+        }
+      }
+    } catch (err) {
+      logger.error({ err }, 'Orphan inMatch heal failed');
+    }
   }, 60 * 1000).unref();
 }
 
