@@ -104,6 +104,15 @@ and here's a FREE Starter Pack on us for the hype! 🎁 (${bonus.length} players
   }
 
   await sendText(sock, jid, reveal, msg);
+
+  // ── badge: First Legendary Pull ──
+  if (legendaryPulled) {
+    try {
+      require('../utils/badges').award(sender, 'first_legendary', { sock, jid, msg });
+    } catch { /* non-fatal */ }
+  }
+  // High Roller / other currency-milestone badges may have flipped from rewards.
+  try { require('../utils/badges').evaluateMilestones(sender, { sock, jid, msg }); } catch {}
 }
 
 async function cmdBoost({ sock, msg, jid, sender, args, user }) {

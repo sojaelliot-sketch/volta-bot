@@ -195,6 +195,42 @@ module.exports = {
     ROLE_RANK: { user: 0, moderator: 1, officer: 2 },
   },
 
+  // ─── RATE LIMITING (sliding-window flood cap, on top of the per-command
+  // cooldown). Blocks a burst of many commands inside a short window even when
+  // each one respects the cooldown. Owner/staff are exempt from the auto-ban
+  // but still counted so the bot can't be flooded via a privileged account. ──
+  RATELIMIT: {
+    WINDOW_MS: 60 * 1000,   // sliding window length
+    MAX_IN_WINDOW: 20,      // max commands per user per window before throttling
+    BLOCK_MS: 30 * 1000,    // short cool-off once the window cap is hit
+  },
+
+  // ─── BADGES / ACHIEVEMENTS (collectible, shown in profile text only) ──────
+  // Awarded once each; stored as an array of badge KEYS on the user document.
+  BADGES: {
+    first_legendary: { emoji: '🌟', label: 'First Legendary Pull', desc: 'Pulled your first Legendary player.' },
+    win_streak_10:   { emoji: '🔥', label: '10-Win Streak',        desc: 'Won 10 matches in a row.' },
+    comeback_king:   { emoji: '👑', label: 'Comeback King',        desc: 'Won a match after trailing.' },
+    centurion:       { emoji: '💯', label: 'Centurion',            desc: 'Reached 100 career wins.' },
+    goal_machine:    { emoji: '⚽', label: 'Goal Machine',         desc: 'Scored 100 career goals.' },
+    champion:        { emoji: '🏆', label: 'Champion',             desc: 'Won a tournament.' },
+    high_roller:     { emoji: '💎', label: 'High Roller',          desc: 'Held 10,000+ Metaworks at once.' },
+  },
+
+  // ─── TOURNAMENT BETTING (!tbet) ──────────────────────────────────────────
+  TBET: {
+    MIN_STAKE: 20,
+    MAX_STAKE: 5000,
+    PAYOUT_MULT: 2.5,       // stake × this on a correct pick, paid when the tournament resolves
+  },
+
+  // ─── DATA BACKUP (automated JSON snapshots) ──────────────────────────────
+  BACKUP: {
+    INTERVAL_MS: 6 * 60 * 60 * 1000, // snapshot every 6 hours
+    KEEP: 12,                        // keep the most recent N snapshots, prune older
+    DIR: 'backups',                  // sub-dir under DATA_DIR
+  },
+
   // ─── MINI-GAMES ────────────────────────────────────────────────────────
   SLOT: {
     COST: 50,

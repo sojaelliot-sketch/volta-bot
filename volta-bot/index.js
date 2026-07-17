@@ -13,12 +13,14 @@ const qrcode = require('qrcode-terminal');
 const pino = require('pino');
 
 const logger = require('./utils/logger');
-const { connectDB } = require('./config/database');
+const db = require('./config/database');
+const { connectDB } = db;
 const User = require('./models/User');
 const router = require('./commands/router');
 const { sendText } = require('./utils/messaging');
 const { BRAND } = require('./config/constants');
 const { startTipScheduler } = require('./utils/tips');
+const { startBackupScheduler } = require('./utils/backup');
 
 // The active WhatsApp socket — re-assigned on every (re)connect so the tip
 // scheduler always sends through a live connection.
@@ -147,6 +149,9 @@ async function main() {
   await connectDB();
   await startBot();
   startTipScheduler(() => activeSock, 60 * 1000);
+
+  // Automated JSON data backups (timestamped snapshots, pruned to a rolling set).
+  startBackupScheduler();
 
   // Keep the bot's in-memory cache in sync with the web server (and any other
   // writer) so actions taken on one side are always visible on the other. The

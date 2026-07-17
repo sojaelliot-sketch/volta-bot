@@ -9,7 +9,7 @@
 // reward for the walkover.
 const User = require('../models/User');
 const db = require('../config/database');
-const { TOURNAMENT, MATCH } = require('../config/constants');
+const { TOURNAMENT, MATCH, TBET } = require('../config/constants');
 const { sendText } = require('../utils/messaging');
 const { pick } = require('../utils/random');
 
@@ -120,6 +120,7 @@ function create(opts) {
     rounds: null,
     startedAt: null,
     endsAt: null,
+    bets: {},
   };
   persist();
   return current;
@@ -133,6 +134,52 @@ function addPlayer(jid) {
   current.players.push(jid);
   persist();
   return true;
+}
+
+// ─── TOURNAMENT WINNER BETTING (!tbet) ──────────────────────────────────────
+// Bets are held on the live tournament object (persisted) and settled when the
+// champion is decided. A manager may place ONE bet per tournament. Bets can be
+// placed until the tournament STARTS (bracket is built).
+function bettingOpen() {
+  return !!current && !current.rounds; // open until bracket is built
+}
+
+function getBet(bettorJid) {
+  if (!current || !current.bets) return null;
+  return current.bets[bettorJid] || null;
+}
+
+// Place a bet. Returns { ok, error?, bet? }. Stake is deducted immediately.
+function placeBet(bettorJid, pickJid, stake) {
+  if (!current) return { ok: false, error: 'no_tournament' };
+  if (!bettingOpen()) return { ok: false, error: 'closed' };
+  if (!current.players.includes(pickJid)) return { ok: false, error: 'not_a_player' };
+  if (current.bets && current.bets[bettorJid]) return { ok: false, error: 'already_bet' };
+  const s = Math.round(stake);
+  if (!Number.isFinite(s) || s < TBET.MIN_STAKE || s > TBET.MAX_STAKE) return { ok: false, error: 'bad_stake' };
+  const u = User.getByWhatsappId(bettorJid);
+  if (!u) return { ok: false, error: 'no_user' };
+  if ((u.currency || 0) < s) return { ok: false, error: 'poor' };
+  User.update(bettorJid, { currency: (u.currency || 0) - s });
+  if (!current.bets) current.bets = {};
+  current.bets[bettorJid] = { pick: pickJid, stake: s };
+  persist();
+  return { ok: true, bet: current.bets[bettorJid] };
+}
+
+// Pay out all winning bets for the given champion. Called from checkComplete.
+function settleBets(championJid) {
+  if (!current || !current.bets) return;
+  for (const [bettor, bet] of Object.entries(current.bets)) {
+    if (bet.pick !== championJid) continue;
+    const payout = Math.round(bet.stake * TBET.PAYOUT_MULT);
+    const bu = User.getByWhatsappId(bettor);
+    if (bu) User.update(bettor, { currency: (bu.currency || 0) + payout });
+    try {
+      sendText(current.sock, bettor,
+        `🎯 *Your tournament bet HIT!*\nYou backed *${nameOf(championJid)}* and won *${payout}* Metaworks! 💰`);
+    } catch {}
+  }
 }
 
 function start() {
@@ -234,6 +281,9 @@ function checkComplete() {
   pay(runnerUp, Math.round(current.prize * 0.4));
   semiLosers.forEach((j) => pay(j, Math.round(current.prize * 0.15)));
 
+  // settle any winner bets before we tear the tournament down
+  settleBets(winner);
+
   // track tournament wins
   const wu = User.getByWhatsappId(winner);
   if (wu) User.update(winner, { tournamentWins: (wu.tournamentWins || 0) + 1 });
@@ -259,5 +309,5 @@ function summary() {
 module.exports = {
   isActive, cancel, create, addPlayer, start, resolveByResult, findMatch,
   allMatches, summary, teamStrength, eff, pendingMatchFor, startTChallenge,
-  roundLabelForSize,
+  roundLabelForSize, bettingOpen, getBet, placeBet, nameOf,
 };

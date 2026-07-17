@@ -9,6 +9,7 @@ const { money } = require('../utils/formatter');
 const { sendText } = require('../utils/messaging');
 const { BRAND } = require('../config/constants');
 const { resolveTarget } = require('./router');
+const { formatBadges } = require('../utils/badges');
 
 function roleLabel(role) {
   if (role === 'officer') return '👮 Officer';
@@ -21,14 +22,17 @@ function profileBlock(u) {
   const ovr = owned.length
     ? owned.reduce((s, p) => s + Player.totalStats(p), 0)
     : 0;
+  const badges = formatBadges(u);
   return (
     `👤 *${u.name}*\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `💰 ${money(u.currency)}  🏆 MMR ${u.mmr} (${u.rank})\n` +
     `⚔️ ${u.wins}W ${u.losses}L ${u.draws}D  ·  ${User.winRate(u)}% win rate\n` +
     `⚽ ${u.totalGoals || 0} career goals  🏆 ${u.tournamentWins || 0} tournament wins\n` +
+    `🔥 Win streak: ${u.winStreak || 0}\n` +
     `🧢 ${owned.length} players  ·  Squad OVR ${ovr}\n` +
     `👥 Role: ${roleLabel(u.role)}\n` +
+    (badges ? `━━━━━━━━━━━━━━━━━━━━━━━\n${badges}\n` : '') +
     `━━━━━━━━━━━━━━━━━━━━━━━`
   );
 }

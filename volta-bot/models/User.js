@@ -26,6 +26,11 @@ function newUserDoc(whatsappId, name) {
     losses: 0,
     draws: 0,
     totalGoals: 0,
+    winStreak: 0,           // current consecutive-win counter (for badges)
+    tournamentWins: 0,
+
+    // Collectible badges/achievements — array of badge KEYS (see BADGES const).
+    badges: [],
 
     // Daily
     lastDaily: null,

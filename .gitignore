@@ -4,6 +4,7 @@ volta-bot/node_modules/
 # runtime data / secrets / logs
 volta-bot/sessions/
 volta-bot/data/*.json
+volta-bot/data/backups/
 volta-bot/logs/
 volta-bot/.env
 volta-bot/*.log

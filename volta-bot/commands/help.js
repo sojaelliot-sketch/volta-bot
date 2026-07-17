@@ -38,6 +38,7 @@ const MENU = `⚽ *VOLTA* — ${BRAND}
 !rename [id] [name] — ✏️ Nickname
 !reserve [id] — 📦 Send a player to Reserves
 !reserve out [id] — ↩️ Back to Bench
+!preserves — 📦 List the players in your Reserves
 !squads — 🗂️ Your team slots
 !buysquad — 💳 Unlock a 2nd/3rd team (1500 MW)
 !switchsquad [n] — 🔁 Use team 1/2/3
@@ -82,10 +83,13 @@ const MENU = `⚽ *VOLTA* — ${BRAND}
 !tournament start classic|penalty [prize] — 🏆 (Mod+)
 !join — 🎮 Enter tournament
 !tourneyplay — ⚔️ Play your tournament tie
+!tbet <player> <stake> — 🎲 Bet on who wins the tournament (pays out on a win)
 !penalty [bet] — 🥅 Penalty shootout (vs AI or @user)
 !leaderboard / !lb [mmr|wins|goals|rich|winrate] — 📊 Ranks
 !top10 — 🌍 Public top-10 managers (anyone can peek)
 !playerlb / !plb [ovr|goals|motm|value] — 🏆 Player leaderboard
+!profile / !info — 👤 Your profile (shows your 🏅 badges)
+!pong — 🏓 Bot health: uptime, latency & status
 !tutorial — 🍼 Explains everything (like you're 5)
 
  *💡 TIP:* You can target most commands by replying to a message, @mentioning,

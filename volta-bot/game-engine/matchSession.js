@@ -591,6 +591,9 @@ async function resolveChance(s, sender, raw) {
 
     if (isGoal) {
       if (attackerSide === 'home') s.homeScore++; else s.awayScore++;
+      // Track whether either side was ever trailing (for the Comeback badge).
+      if (s.homeScore < s.awayScore) s.homeWasBehind = true;
+      if (s.awayScore < s.homeScore) s.awayWasBehind = true;
       s.scorerStats[sid].goals++;
       s.goalScorers.push({ player: Player.displayName(player) || player.name, minute: fm, team: attackerSide, id: player.id });
       s[`${attackerSide}Momentum`] = engine.updateMomentum(s[`${attackerSide}Momentum`], 'GOAL');
@@ -673,6 +676,7 @@ async function finishPvP(s) {
     draws: (h.draws || 0) + (isDraw ? 1 : 0),
     mmr: (h.mmr || 1000) + homeMmr,
     totalGoals: (h.totalGoals || 0) + s.homeScore,
+    winStreak: homeWon ? (h.winStreak || 0) + 1 : 0,
   });
   // Home rank can always change (home is always a real user).
   const hu = User.getByWhatsappId(s.homeId);
@@ -692,6 +696,7 @@ async function finishPvP(s) {
       draws: (a.draws || 0) + (isDraw ? 1 : 0),
       mmr: (a.mmr || 1000) + awayMmr,
       totalGoals: (a.totalGoals || 0) + s.awayScore,
+      winStreak: (winnerId === s.awayId) ? (a.winStreak || 0) + 1 : 0,
     });
     const au = User.getByWhatsappId(s.awayId);
     const newRankA = calcRank(au ? au.mmr : 1000);
@@ -761,6 +766,24 @@ async function finishPvP(s) {
   const scorerIds = (s.goalScorers || []).map((g) => g.id).filter(Boolean);
   postMatchGrowth(s.homeSquad, scorerIds);
   postMatchGrowth(s.awaySquad, scorerIds);
+
+  // ── badges / achievements ──
+  try {
+    const badges = require('../utils/badges');
+    const opts = { sock: s.sock, jid: s.chatJid };
+    if (homeWon) {
+      if (s.homeWasBehind) badges.award(s.homeId, 'comeback_king', opts);
+      badges.evaluateMilestones(s.homeId, opts);
+    } else if (!isDraw) {
+      badges.evaluateMilestones(s.homeId);
+    }
+    if (!s.isAI && winnerId === s.awayId) {
+      if (s.awayWasBehind) badges.award(s.awayId, 'comeback_king', opts);
+      badges.evaluateMilestones(s.awayId, opts);
+    }
+  } catch (err) {
+    logger.error({ err }, 'Badge evaluation failed (PvP)');
+  }
 
   lockedChats.delete(s.chatJid);
 }
@@ -886,7 +909,20 @@ async function endMatch(session) {
     draws: (h.draws || 0) + (isDraw ? 1 : 0),
     mmr: (h.mmr || 1000) + mmrDelta,
     totalGoals: (h.totalGoals || 0) + homeScore,
+    winStreak: homeWon ? (h.winStreak || 0) + 1 : 0,
   });
+
+  // Detect a comeback: the home side was trailing at any point during the match.
+  // Reconstruct running scores from the timeline of goals to see if home ever
+  // went behind before winning.
+  let homeWasBehind = false;
+  {
+    let hs = 0, as = 0;
+    for (const g of [...(goalScorers || [])].sort((a, b) => (a.minute || 0) - (b.minute || 0))) {
+      if (g.team === 'home') hs++; else as++;
+      if (hs < as) homeWasBehind = true;
+    }
+  }
 
   const homeScorer = goalScorers.find(g => g.team === 'home');
   // Build a per-player stats map so the MVP picks on goals + involvement + rating
@@ -932,6 +968,20 @@ async function endMatch(session) {
     rewards.push(`🏅 *RANK UP!* You're *${newRank}* now! 🚀`);
   }
   await sendText(sock, chatJid, rewards.join('\n'));
+
+  // ── badges / achievements (home side) ──
+  try {
+    const badges = require('../utils/badges');
+    const opts = { sock, jid: chatJid };
+    if (homeWon) {
+      if (homeWasBehind) badges.award(homeId, 'comeback_king', opts);
+      badges.evaluateMilestones(homeId, opts);
+    } else {
+      badges.evaluateMilestones(homeId);
+    }
+  } catch (err) {
+    logger.error({ err }, 'Badge evaluation failed (vs-AI)');
+  }
 
   if (!isAI && awayId) {
     // if these two were a tournament tie, record the result

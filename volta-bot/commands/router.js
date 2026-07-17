@@ -1,7 +1,8 @@
 const User = require('../models/User');
 const logger = require('../utils/logger');
 const { sendText } = require('../utils/messaging');
-const { MODERATION } = require('../config/constants');
+const stats = require('../utils/stats');
+const { MODERATION, RATELIMIT } = require('../config/constants');
 const { grantStarterSquad } = require('../utils/playerGenerator');
 const { isChatLocked, getActivePvPForUser } = require('../game-engine/matchSession');
 const { isEnabled: botEnabled } = require('./botstate');
@@ -93,8 +94,11 @@ const handlers = {
   password: () => require('./password'),
   setpass: () => require('./password'),
   reserve: () => require('./reserve'),
+  preserves: () => require('./preserves'),
   broadcast: () => require('./broadcast'),
   ping: () => require('./ping'),
+  pong: () => require('./pong'),
+  tbet: () => require('./tbet'),
   debug: () => require('./debug'),
   setbounty: () => require('./setbounty'),
   academy: () => require('./academy'),
@@ -121,6 +125,27 @@ const PUBLIC_COMMANDS = new Set(['start', 'register', 'help', 'menu', 'top10', '
 // ─── spam / cooldown tracking ───────────────────────────────────────────────
 const lastCommandAt = new Map();   // sender -> timestamp
 const warnCount     = new Map();    // sender -> warnings
+
+// ─── sliding-window rate limiter ────────────────────────────────────────────
+// Tracks recent command timestamps per sender. If a sender exceeds MAX_IN_WINDOW
+// commands within WINDOW_MS, they're throttled for BLOCK_MS. This catches a
+// sustained flood that individually respects the per-command cooldown.
+const windowHits = new Map();      // sender -> number[] of timestamps
+const blockedUntil = new Map();    // sender -> timestamp until which they're blocked
+
+function rateLimited(sender, now) {
+  const until = blockedUntil.get(sender) || 0;
+  if (now < until) return true;
+  const hits = (windowHits.get(sender) || []).filter((t) => now - t < RATELIMIT.WINDOW_MS);
+  hits.push(now);
+  windowHits.set(sender, hits);
+  if (hits.length > RATELIMIT.MAX_IN_WINDOW) {
+    blockedUntil.set(sender, now + RATELIMIT.BLOCK_MS);
+    windowHits.set(sender, []);
+    return true;
+  }
+  return false;
+}
 
 function isExempt(sender, user) {
   return User.isOwner(sender) || User.isStaff(user);
@@ -201,6 +226,7 @@ async function handle(sock, msg) {
 
     const [rawCmd, ...args] = text.slice(PREFIX.length).trim().split(/\s+/);
     const cmd = rawCmd.toLowerCase();
+    stats.commandSeen();
 
     // ── global on/off gate ──
     // When the bot is OFF, only the owner may act, and the only command that
@@ -278,6 +304,13 @@ async function handle(sock, msg) {
       }
       lastCommandAt.set(sender, now);
       warnCount.delete(sender);
+
+      // ── sliding-window flood cap (on top of the cooldown) ──
+      // Owner/staff are never blocked, but everyone is counted.
+      if (rateLimited(sender, now) && !isExempt(sender, user)) {
+        await sendText(sock, jid, `🐢 You're sending commands too fast. Take a short break and try again in a moment.`, msg);
+        return;
+      }
     }
 
     // ── PvP command lock ──
@@ -307,8 +340,10 @@ async function handle(sock, msg) {
     }
 
     const mod = getHandler();
+    stats.commandAnswered();
     await mod.handle({ sock, msg, jid, sender, cmd, args, user, replyTo, mentioned });
   } catch (err) {
+    stats.issueFound(err);
     logger.error({ err }, 'Error handling message');
     try {
       await sendText(sock, msg.key.remoteJid, '⚠️ Something went wrong processing that command. Try again in a moment.');
