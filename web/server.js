@@ -18,8 +18,8 @@ const crypto = require('crypto');
 const db = require('../config/database');
 const User = require('../models/User');
 const Player = require('../models/Player');
-const { openPack, seedMarketPlayer } = require('../utils/playerGenerator');
-const { PACKS, SHOP, TRAINING, PENALTY, COINFLIP, HIGHLOW, SLOT, RARITY, MARKET } = require('../config/constants');
+const { openPack, seedMarketPlayer, buildYouthPlayer } = require('../utils/playerGenerator');
+const { PACKS, SHOP, TRAINING, PENALTY, COINFLIP, HIGHLOW, SLOT, RARITY, MARKET, ACADEMY, ECONOMY, BADGES } = require('../config/constants');
 const { randInt, pick, weightedRandom } = require('../utils/random');
 const transfer = require('../models/transfer');
 const { v4: uuid } = require('uuid');
@@ -57,7 +57,7 @@ function toStrArray(v) {
 // Bump when new web-only endpoints/features are added so the frontend can warn
 // the manager if their running backend process is stale (it loads routes at
 // startup, so editing server.js requires a restart to take effect).
-const WEB_VERSION = 4;
+const WEB_VERSION = 6;
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
@@ -104,6 +104,14 @@ function saveSessions() {
   } catch {}
 }
 loadSessions();
+
+function sameDay(a, b) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+function consecutiveDay(prev, now) {
+  const hours = (now.getTime() - prev.getTime()) / 3.6e6;
+  return hours >= 20 && hours <= 48;
+}
 
 function playerTotal(p) {
   if (!p || !p.stats) return 0;
@@ -154,6 +162,19 @@ function publicUser(u) {
     startingXI: u.startingXI || [],
     bench: u.bench || [],
     reserves: u.reserves || [],
+    youth: (u.youth || []).map((id) => {
+      const yp = db.findById('players', id);
+      if (!yp) return null;
+      return {
+        id: yp.id, name: yp.nickname || yp.name, role: yp.role, rarity: yp.rarity,
+        level: yp.level, condition: yp.condition, form: yp.form, total: playerTotal(yp),
+        potential: yp.potential, age: yp.age, stats: yp.stats, chemistry: yp.chemistry || 0,
+      };
+    }).filter(Boolean),
+    tournamentWins: u.tournamentWins || 0,
+    badges: u.badges || [],
+    winStreak: u.winStreak || 0,
+    isOwner: (() => { try { return User.isOwner(u.whatsappId); } catch { return false; } })(),
     roster,
   };
 }
@@ -169,7 +190,7 @@ function send(res, status, body, headers = {}) {
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, ngrok-skip-browser-warning',
 };
 
 function readBody(req) {
@@ -431,7 +452,116 @@ const server = http.createServer(async (req, res) => {
 
     // ── INFO (frontend compatibility check) ──
     if (p === '/api/info' && req.method === 'GET') {
-      return send(res, 200, { ok: true, version: WEB_VERSION, features: ['shop', 'penalty', 'coinflip', 'slot', 'highlow', 'market', 'transfer'] });
+      return send(res, 200, { ok: true, version: WEB_VERSION, features: ['shop', 'penalty', 'coinflip', 'slot', 'highlow', 'market', 'transfer', 'search', 'academy', 'tournament', 'heartbeat', 'badges', 'daily', 'manager', 'analyze', 'bounties', 'mymatches', 'compare'] });
+    }
+
+    // ── HEARTBEAT (heartbeat monitor pings this; reports bot liveliness) ──
+    if (p === '/api/heartbeat' && req.method === 'GET') {
+      reload();
+      const users = db.all('users').filter((u) => u.registered).length;
+      return send(res, 200, { ok: true, ts: Date.now(), users, version: WEB_VERSION });
+    }
+
+    // ── SEARCH players by name (public, read-only) ──
+    if (p === '/api/search' && req.method === 'GET') {
+      reload();
+      const q = String(url.searchParams.get('q') || '').trim().toLowerCase();
+      const viewerId = authenticate(url.searchParams.get('token'));
+      const listingByPlayer = {};
+      for (const l of db.all('market')) {
+        if (!l.sold) listingByPlayer[l.playerId] = l;
+      }
+      let results = db.all('players');
+      if (q) results = results.filter((pl) => (pl.name || '').toLowerCase().includes(q));
+      results = results
+        .map((pl) => ({
+          id: pl.id, name: pl.nickname || pl.name, role: pl.role, rarity: pl.rarity,
+          level: pl.level, total: playerTotal(pl), chemistry: pl.chemistry || 0,
+          ownerId: pl.ownerId, isListed: !!listingByPlayer[pl.playerId],
+          price: listingByPlayer[pl.playerId] ? listingByPlayer[pl.playerId].price : null,
+        }))
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 24);
+      return send(res, 200, { results, q });
+    }
+
+    // ── ACADEMY (youth prospects for the logged-in manager) ──
+    if (p === '/api/academy' && req.method === 'GET') {
+      const id = authenticate(url.searchParams.get('token'));
+      if (!id) return send(res, 401, { error: 'Not logged in.' });
+      reload();
+      const u = db.findById('users', id);
+      const youth = (u.youth || []).map((yid) => {
+        const yp = db.findById('players', yid);
+        if (!yp) return null;
+        return {
+          id: yp.id, name: yp.nickname || yp.name, role: yp.role, rarity: yp.rarity,
+          level: yp.level, total: playerTotal(yp), potential: yp.potential, age: yp.age,
+          stats: yp.stats, chemistry: yp.chemistry || 0,
+        };
+      }).filter(Boolean);
+      return send(res, 200, { youth, scoutCost: ACADEMY.SCOUT_COST, slots: ACADEMY.SCOUT_SLOTS });
+    }
+
+    // ── ACADEMY: scout a new prospect (costs ACADEMY.SCOUT_COST) ──
+    if (p === '/api/academy/scout' && req.method === 'POST') {
+      const body = await readBody(req);
+      const id = authenticate(body.token);
+      if (!id) return send(res, 401, { error: 'Not logged in.' });
+      reload();
+      const u = db.findById('users', id);
+      if ((u.currency || 0) < ACADEMY.SCOUT_COST) return send(res, 400, { error: `Need ${ACADEMY.SCOUT_COST} Metaworks.` });
+      const youth = u.youth || [];
+      if (youth.length >= ACADEMY.SCOUT_SLOTS) return send(res, 400, { error: 'Academy full — promote a prospect first.' });
+      const player = buildYouthPlayer(id);
+      User.update(id, { currency: (u.currency || 0) - ACADEMY.SCOUT_COST, youth: [...youth, player.id] });
+      reload();
+      return send(res, 200, { ok: true, player: { id: player.id, name: player.name, role: player.role, total: playerTotal(player), potential: player.potential }, user: publicUser(db.findById('users', id)) });
+    }
+
+    // ── ACADEMY: promote a youth prospect into the squad (Reserves) ──
+    if (p === '/api/academy/promote' && req.method === 'POST') {
+      const body = await readBody(req);
+      const id = authenticate(body.token);
+      if (!id) return send(res, 401, { error: 'Not logged in.' });
+      const youthId = String(body.youthId || '').trim();
+      if (!youthId) return send(res, 400, { error: 'Youth ID required.' });
+      reload();
+      const u = db.findById('users', id);
+      if (!u.youth || !u.youth.includes(youthId)) return send(res, 400, { error: 'No such youth prospect.' });
+      User.update(id, {
+        youth: (u.youth || []).filter((y) => y !== youthId),
+        reserves: [...(u.reserves || []), youthId],
+      });
+      reload();
+      return send(res, 200, { ok: true, user: publicUser(db.findById('users', id)) });
+    }
+
+    // ── TOURNAMENT BRACKET VIEW (TBV) — read-only mirror of the live bracket ──
+    if (p === '/api/tournament' && req.method === 'GET') {
+      reload();
+      const live = db.findById('tournaments', 'live');
+      if (!live) return send(res, 200, { active: false });
+      const nameOf = (x) => {
+        if (!x || x === 'BYE') return 'BYE';
+        if (typeof x === 'object') return nameOf(x.winner) || 'TBD';
+        return User.getByWhatsappId(x)?.name || x.split('@')[0];
+      };
+      const eff = (x) => (x && typeof x === 'object' ? x.winner : x);
+      const rounds = (live.rounds || []).map((round) => ({
+        matches: round.map((m) => ({
+          a: nameOf(m.a), b: nameOf(m.b),
+          winner: m.winner ? nameOf(eff(m.a) === m.winner ? m.a : m.b) : null,
+          simulated: !!m.simulated,
+        })),
+      }));
+      return send(res, 200, {
+        active: true,
+        category: live.category,
+        prize: live.prize,
+        players: (live.players || []).length,
+        rounds,
+      });
     }
 
     // ── MARKET: browse active listings (public, read-only) ──
@@ -859,6 +989,163 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true, first, next, dir, mult: +mult.toFixed(2), outcome, net, currency: db.findById('users', id).currency, user: publicUser(db.findById('users', id)) });
     }
 
+    // ── BADGES: catalog (public) — labels/descriptions for the badge keys ──
+    if (p === '/api/badges' && req.method === 'GET') {
+      return send(res, 200, { catalog: BADGES });
+    }
+
+    // ── DAILY: claim the daily reward (mirrors the bot's !daily logic) ──
+    if (p === '/api/daily' && req.method === 'POST') {
+      const body = await readBody(req);
+      const id = authenticate(body.token);
+      if (!id) return send(res, 401, { error: 'Not logged in.' });
+      reload();
+      const u = db.findById('users', id);
+      if (!u) return send(res, 404, { error: 'Account not found.' });
+      const now = new Date();
+      const last = u.lastDaily ? new Date(u.lastDaily) : null;
+      if (last && sameDay(last, now)) {
+        const next = new Date(last); next.setDate(next.getDate() + 1); next.setHours(0, 0, 0, 0);
+        const hoursLeft = Math.max(1, Math.ceil((next - now) / 3.6e6));
+        return send(res, 400, { error: `Daily already claimed. Come back in ~${hoursLeft}h.` });
+      }
+      let streak = u.dailyStreak || 0;
+      streak = (last && consecutiveDay(last, now)) ? streak + 1 : 1;
+      const mult = 1 + (streak - 1) * (ECONOMY.STREAK_MULTIPLIER - 1);
+      const reward = Math.min(Math.round(ECONOMY.DAILY_BASE * mult), ECONOMY.MAX_DAILY);
+      User.update(id, { currency: (u.currency || 0) + reward, lastDaily: now.toISOString(), dailyStreak: streak });
+      reload();
+      return send(res, 200, { ok: true, reward, streak, user: publicUser(db.findById('users', id)) });
+    }
+
+    // ── DAILY: status (can I claim today? next reward preview) ──
+    if (p === '/api/daily' && req.method === 'GET') {
+      const id = authenticate(url.searchParams.get('token'));
+      if (!id) return send(res, 401, { error: 'Not logged in.' });
+      reload();
+      const u = db.findById('users', id);
+      const now = new Date();
+      const last = u.lastDaily ? new Date(u.lastDaily) : null;
+      const claimedToday = !!(last && sameDay(last, now));
+      const streak = u.dailyStreak || 0;
+      const nextStreak = (last && consecutiveDay(last, now)) ? streak + 1 : 1;
+      const preview = Math.min(Math.round(ECONOMY.DAILY_BASE * (1 + (nextStreak - 1) * (ECONOMY.STREAK_MULTIPLIER - 1))), ECONOMY.MAX_DAILY);
+      return send(res, 200, { claimedToday, streak, nextReward: preview, maxDaily: ECONOMY.MAX_DAILY });
+    }
+
+    // ── MANAGER: public profile of another manager by team name ──
+    if (p === '/api/manager' && req.method === 'GET') {
+      reload();
+      const nameKey = String(url.searchParams.get('name') || '').trim().toLowerCase();
+      if (!nameKey) return send(res, 400, { error: 'Manager name required.' });
+      const u = db.all('users').find((x) => x.registered && (x.name || '').trim().toLowerCase() === nameKey);
+      if (!u) return send(res, 404, { error: 'No registered manager with that team name.' });
+      const players = db.all('players');
+      const pmap = Object.fromEntries(players.map((pl) => [pl.id, pl]));
+      const squadPower = (u.startingXI || []).map((pid) => pmap[pid]).filter(Boolean).reduce((s, pl) => s + playerTotal(pl), 0);
+      const topPlayers = [...(u.startingXI || []), ...(u.bench || []), ...(u.reserves || [])]
+        .map((pid) => pmap[pid]).filter(Boolean)
+        .map((pl) => ({ id: pl.id, name: pl.nickname || pl.name, rarity: pl.rarity, role: pl.role, total: playerTotal(pl) }))
+        .sort((a, b) => b.total - a.total).slice(0, 5);
+      const total = (u.wins || 0) + (u.losses || 0) + (u.draws || 0);
+      return send(res, 200, {
+        manager: {
+          name: u.name, mmr: u.mmr, rank: u.rank,
+          wins: u.wins || 0, losses: u.losses || 0, draws: u.draws || 0,
+          winRate: total ? Math.round(((u.wins || 0) / total) * 100) : 0,
+          squadPower, tournamentWins: u.tournamentWins || 0, winStreak: u.winStreak || 0,
+          badges: u.badges || [], bounty: u.bounty || 0, topPlayers,
+        },
+      });
+    }
+
+    // ── SQUAD ANALYZE: rating / chemistry / condition breakdown of the XI ──
+    if (p === '/api/squad/analyze' && req.method === 'GET') {
+      const id = authenticate(url.searchParams.get('token'));
+      if (!id) return send(res, 401, { error: 'Not logged in.' });
+      reload();
+      const u = db.findById('users', id);
+      const xi = (u.startingXI || []).map((pid) => db.findById('players', pid)).filter(Boolean);
+      if (!xi.length) return send(res, 200, { empty: true });
+      const ovrs = xi.map(playerTotal);
+      const avgOvr = Math.round(ovrs.reduce((a, b) => a + b, 0) / ovrs.length);
+      const avgCondition = Math.round(xi.reduce((s, pl) => s + (pl.condition || 0), 0) / xi.length);
+      const avgChem = Math.round(xi.reduce((s, pl) => s + (pl.chemistry || 0), 0) / xi.length);
+      const gk = xi.filter((pl) => pl.role === 'goalkeeper').length;
+      const outfield = xi.length - gk;
+      const hotForm = xi.filter((pl) => pl.form === 'Hot').length;
+      const strongest = xi.reduce((a, b) => (playerTotal(b) > playerTotal(a) ? b : a));
+      const weakest = xi.reduce((a, b) => (playerTotal(b) < playerTotal(a) ? b : a));
+      const tips = [];
+      if (gk === 0) tips.push('No goalkeeper in your XI — add one for a stronger defence.');
+      if (avgCondition < 60) tips.push('Squad condition is low — restore energy in the Shop.');
+      if (avgChem < 40) tips.push('Low chemistry — play more matches together to build it.');
+      if (xi.length < 4) tips.push(`Only ${xi.length}/4 starters — fill your XI on the Dashboard.`);
+      if (!tips.length) tips.push('Squad looks sharp. Go get some wins!');
+      return send(res, 200, {
+        size: xi.length, avgOvr, avgCondition, avgChem, gk, outfield, hotForm,
+        strongest: { id: strongest.id, name: strongest.nickname || strongest.name, total: playerTotal(strongest) },
+        weakest: { id: weakest.id, name: weakest.nickname || weakest.name, total: playerTotal(weakest) },
+        tips,
+      });
+    }
+
+    // ── BOUNTY BOARD: managers with an active bounty (public, read-only) ──
+    if (p === '/api/bounties' && req.method === 'GET') {
+      reload();
+      const list = db.all('users')
+        .filter((u) => u.registered && (u.bounty || 0) > 0)
+        .sort((a, b) => (b.bounty || 0) - (a.bounty || 0))
+        .map((u) => ({ name: u.name, bounty: u.bounty, mmr: u.mmr, wins: u.wins || 0, losses: u.losses || 0 }));
+      return send(res, 200, { bounties: list });
+    }
+
+    // ── BOUNTY SET (owner-only, mirrors !setbounty) ──
+    if (p === '/api/bounty/set' && req.method === 'POST') {
+      const body = await readBody(req);
+      const id = authenticate(body.token);
+      if (!id) return send(res, 401, { error: 'Not logged in.' });
+      if (!User.isOwner(id)) return send(res, 403, { error: 'Bounties are owner-only.' });
+      const price = parseInt(body.price, 10);
+      if (!price || price <= 0) return send(res, 400, { error: 'A positive bounty price is required.' });
+      const targetName = String(body.target || '').trim().toLowerCase();
+      if (!targetName) return send(res, 400, { error: 'Target manager name required.' });
+      reload();
+      const them = db.all('users').find((u) => u.registered && (u.name || '').trim().toLowerCase() === targetName);
+      if (!them) return send(res, 404, { error: 'No registered manager with that team name.' });
+      User.update(them.whatsappId, { bounty: price });
+      reload();
+      return send(res, 200, { ok: true, target: them.name, price });
+    }
+
+    // ── MY MATCHES: match history involving the logged-in manager ──
+    if (p === '/api/mymatches' && req.method === 'GET') {
+      const id = authenticate(url.searchParams.get('token'));
+      if (!id) return send(res, 401, { error: 'Not logged in.' });
+      reload();
+      const u = db.findById('users', id);
+      const myName = (u.name || '').trim().toLowerCase();
+      const matches = readJsonFile(MATCHES_FILE);
+      const list = Object.values(matches)
+        .filter((m) => (m.homeName || '').trim().toLowerCase() === myName || (m.awayName || '').trim().toLowerCase() === myName)
+        .sort((a, b) => new Date(b.date) - new Date(a.date))
+        .slice(0, 25)
+        .map((m) => {
+          const isHome = (m.homeName || '').trim().toLowerCase() === myName;
+          const my = isHome ? m.homeScore : m.awayScore;
+          const opp = isHome ? m.awayScore : m.homeScore;
+          const outcome = my > opp ? 'W' : my < opp ? 'L' : 'D';
+          return {
+            id: m.id, date: m.date, opponent: isHome ? m.awayName : m.homeName,
+            myScore: my, oppScore: opp, outcome, mvp: m.mvp, goalScorers: m.goalScorers || [],
+          };
+        });
+      const wins = list.filter((m) => m.outcome === 'W').length;
+      const losses = list.filter((m) => m.outcome === 'L').length;
+      const draws = list.filter((m) => m.outcome === 'D').length;
+      return send(res, 200, { matches: list, summary: { wins, losses, draws } });
+    }
+
     send(res, 404, { error: 'unknown endpoint' });
   } catch (err) {
     console.error(err);
@@ -875,6 +1162,20 @@ function readJsonFile(file) {
   }
 }
 
+// Graceful startup: if the port is already taken (e.g. a stray node process
+// from a previous crash), walk upward to the next free port instead of crashing
+// — keeps the web app from breaking on a restart.
+server.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    const next = PORT + 1;
+    console.warn(`[VOLTA WEB] Port ${PORT} in use — trying ${next}`);
+    server.listen(next, () => {
+      console.log(`[VOLTA WEB] Manager app live at http://localhost:${next}`);
+    });
+  } else {
+    console.error('[VOLTA WEB] server error:', err);
+  }
+});
 server.listen(PORT, () => {
   console.log(`[VOLTA WEB] Manager app live at http://localhost:${PORT}`);
 });

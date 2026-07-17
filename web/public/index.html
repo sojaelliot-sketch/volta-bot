@@ -4,218 +4,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>VOLTA · Manager</title>
-<style>
-  :root{
-    --ink:#0a0a0a; --paper:#ffffff; --line:#0a0a0a; --muted:#717171;
-    --soft:#f4f4f4; --shadow:5px 5px 0 var(--ink); --radius:18px;
-    --accent:#0a0a0a;
-  }
-  [data-theme="dark"]{
-    --ink:#f3f3f3; --paper:#0b0b0b; --line:#f3f3f3; --muted:#9a9a9a;
-    --soft:#171717; --shadow:5px 5px 0 var(--ink);
-  }
-  *{box-sizing:border-box;margin:0;padding:0}
-  html,body{height:100%}
-  body{background:var(--paper);color:var(--ink);
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
-    -webkit-font-smoothing:antialiased;line-height:1.45;transition:background .35s,color .35s;
-    padding-bottom:env(safe-area-inset-bottom)}
-  .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
-  .wrap{max-width:1080px;margin:0 auto;padding:20px 16px 104px}
-  .brand{font-weight:800;letter-spacing:.2em;font-size:14px;text-transform:uppercase;display:flex;align-items:center;gap:9px}
-  .brand .mk{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border:2px solid var(--line);border-radius:6px;font-size:11px;font-weight:900}
-  .brand b{font-weight:800}
+<link rel="stylesheet" href="style.css" />
 
-  .btn{font:inherit;cursor:pointer;border:2px solid var(--line);background:var(--ink);color:var(--paper);
-    padding:11px 18px;border-radius:999px;font-weight:700;letter-spacing:.03em;transition:.18s;min-height:44px;
-    display:inline-flex;align-items:center;justify-content:center;gap:7px}
-  .btn:hover{transform:translateY(-1px);box-shadow:4px 4px 0 var(--line)}
-  .btn:active{transform:translateY(0)}
-  .btn.ghost{background:transparent;color:var(--ink)}
-  .btn.ghost:hover{background:var(--ink);color:var(--paper)}
-  .btn.sm{padding:8px 13px;font-size:13px;min-height:38px}
-  .btn:disabled{opacity:.4;cursor:not-allowed;transform:none;box-shadow:none}
-  .iconbtn{width:44px;height:44px;border-radius:999px;border:2px solid var(--line);background:transparent;
-    color:var(--ink);cursor:pointer;font-size:16px;transition:.18s;display:inline-flex;align-items:center;justify-content:center}
-  .iconbtn:hover{background:var(--ink);color:var(--paper)}
-
-  .login{min-height:90vh;display:flex;align-items:center;justify-content:center;animation:fade .5s}
-  .card{border:2px solid var(--line);border-radius:24px;padding:38px 32px;width:390px;max-width:100%;
-    box-shadow:var(--shadow);animation:rise .5s;background:var(--paper)}
-  .card h1{font-size:24px;letter-spacing:.02em;margin-bottom:6px}
-  .card p{color:var(--muted);font-size:13px;margin-bottom:22px}
-  .field{width:100%;border:2px solid var(--line);border-radius:13px;padding:13px 14px;font:inherit;
-    font-size:15px;outline:none;margin-bottom:14px;background:var(--paper);color:var(--ink);transition:.18s;min-height:46px}
-  .field:focus{box-shadow:4px 4px 0 var(--line)}
-  .err{color:var(--ink);background:var(--soft);border:1px solid var(--line);padding:9px 12px;
-    border-radius:10px;font-size:13px;margin-bottom:14px;display:none}
-
-  .topbar{display:flex;align-items:center;justify-content:space-between;gap:10px;
-    border-bottom:2px solid var(--line);padding-bottom:14px;margin-bottom:24px;flex-wrap:wrap}
-  .topbar .meta{display:flex;flex-direction:column;gap:3px}
-  #teamName{font-size:18px;font-weight:800;letter-spacing:.01em}
-  .topright{display:flex;gap:8px;align-items:center}
-
-  .warn{position:sticky;top:8px;z-index:30;margin:0 auto 18px;max-width:1080px;
-    border:2px solid var(--line);border-radius:14px;background:var(--soft);padding:12px 16px;
-    font-size:13px;display:flex;gap:10px;align-items:center;animation:rise .4s}
-  .warn .x{margin-left:auto;cursor:pointer;border:none;background:none;color:var(--ink);font-size:16px}
-
-  .nav{position:fixed;left:0;right:0;bottom:0;z-index:40;display:flex;background:var(--paper);
-    border-top:2px solid var(--line);padding:8px 10px calc(10px + env(safe-area-inset-bottom));
-    gap:6px;max-width:1080px;margin:0 auto}
-  .nav button{flex:1;border:none;background:transparent;color:var(--muted);cursor:pointer;
-    font:inherit;font-size:10.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
-    display:flex;flex-direction:column;align-items:center;gap:4px;padding:7px 2px;border-radius:13px;transition:.18s}
-  .nav button .ic{font-size:19px;line-height:1;filter:grayscale(1)}
-  .nav button.active{color:var(--ink);background:var(--soft)}
-  .nav button.active .ic{filter:none;transform:translateY(-1px)}
-
-  .stats{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:22px}
-  .stat{border:2px solid var(--line);border-radius:var(--radius);padding:14px 14px 15px;transition:.2s;animation:rise .5s;position:relative;overflow:hidden}
-  .stat::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:var(--ink);opacity:.12}
-  .stat:hover{transform:translateY(-3px);box-shadow:4px 4px 0 var(--line)}
-  .stat .k{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
-  .stat .v{font-size:21px;font-weight:800;margin-top:5px}
-  .stat .v.small{font-size:16px}
-  .sec-title{display:flex;align-items:center;justify-content:space-between;gap:10px;
-    border-bottom:2px solid var(--line);padding-bottom:9px;margin:28px 0 16px;flex-wrap:wrap}
-  .sec-title h2{font-size:15px;letter-spacing:.13em;text-transform:uppercase}
-  .xi{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
-  .slot{border:2px dashed var(--line);border-radius:var(--radius);min-height:124px;padding:10px;
-    display:flex;flex-direction:column;justify-content:space-between}
-  .slot.empty{align-items:center;justify-content:center;color:var(--muted);font-size:13px}
-  .pc{border:2px solid var(--line);border-radius:var(--radius);padding:13px;background:var(--paper);
-    display:flex;flex-direction:column;gap:8px;transition:.18s;cursor:pointer;animation:rise .45s}
-  .pc:hover{box-shadow:4px 4px 0 var(--line);transform:translate(-1px,-2px)}
-  .pc .nm{font-weight:700;font-size:14px;display:flex;justify-content:space-between;gap:8px}
-  .pc .rid{font-size:11px;color:var(--muted)}
-  .tag{font-size:10px;letter-spacing:.1em;text-transform:uppercase;border:1px solid var(--line);
-    border-radius:999px;padding:2px 8px;white-space:nowrap}
-  .bench{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
-  .roster{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
-  .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
-  .mini{font-size:11px;border:1px solid var(--line);border-radius:8px;padding:3px 8px;background:var(--soft)}
-  .bar{height:8px;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--paper)}
-  .bar > i{display:block;height:100%;background:var(--ink);width:0;transition:width 1s cubic-bezier(.2,.8,.2,1)}
-  .lb{width:100%;border-collapse:collapse;font-size:13px}
-  .lb th,.lb td{border-bottom:1px solid var(--line);padding:9px 10px;text-align:left}
-  .lb th{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
-  .lb tr:hover{background:var(--soft)}
-  .hidden{display:none!important}
-  .muted{color:var(--muted)}
-  .timeline{border-left:2px solid var(--line);margin-left:8px;padding-left:18px;display:flex;flex-direction:column;gap:16px}
-  .tl-item{position:relative;animation:rise .45s}
-  .tl-item::before{content:"";position:absolute;left:-25px;top:4px;width:12px;height:12px;border-radius:50%;
-    border:2px solid var(--line);background:var(--paper)}
-  .tl-card{border:2px solid var(--line);border-radius:var(--radius);padding:14px;transition:.2s}
-  .tl-card:hover{box-shadow:4px 4px 0 var(--line)}
-  .score{font-size:18px;font-weight:800;letter-spacing:.04em}
-  .badge{font-size:10px;font-weight:800;letter-spacing:.1em;border:2px solid var(--line);border-radius:999px;padding:2px 9px}
-  .bw{background:var(--ink);color:var(--paper)}
-  .bl{background:transparent;color:var(--ink)}
-  .bd{border-style:dashed}
-  .rankbar{height:10px;border:2px solid var(--line);border-radius:999px;overflow:hidden;background:var(--paper);margin-top:9px}
-  .rankbar > i{display:block;height:100%;background:var(--ink);width:0;transition:width 1.1s cubic-bezier(.2,.8,.2,1)}
-  .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;
-    padding:20px;z-index:50;animation:fade .25s}
-  .modal .box{border:2px solid var(--line);border-radius:22px;background:var(--paper);max-width:440px;width:100%;
-    padding:26px;box-shadow:var(--shadow);animation:rise .3s;max-height:88vh;overflow:auto;position:relative}
-  .modal .box h3{font-size:19px;margin-bottom:2px}
-  .statline{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
-  .statline .s{border:1px solid var(--line);border-radius:10px;padding:8px 10px}
-  .statline .s .l{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
-  .statline .s .n{font-size:16px;font-weight:800}
-  .closex{position:absolute;top:14px;right:16px;cursor:pointer;font-size:20px;border:none;background:none;color:var(--ink)}
-  #toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%) translateY(20px);
-    background:var(--ink);color:var(--paper);border:2px solid var(--line);padding:11px 18px;border-radius:999px;
-    font-size:13px;font-weight:700;opacity:0;pointer-events:none;transition:.3s;z-index:60;max-width:92vw;text-align:center}
-  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
-
-  .panel{border:2px solid var(--line);border-radius:var(--radius);padding:20px;margin-bottom:16px;animation:rise .45s;background:var(--paper)}
-  .panel h3{font-size:14px;letter-spacing:.09em;text-transform:uppercase;margin-bottom:4px;display:flex;align-items:center;gap:8px}
-  .panel .desc{font-size:12px;color:var(--muted);margin-bottom:15px}
-  .packs{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-  .pack{border:2px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:8px;align-items:flex-start;background:var(--soft)}
-  .pack .pn{font-weight:800;font-size:15px}
-  .pack .pcost{font-size:13px;font-weight:700}
-  .pack .prange{font-size:11px;color:var(--muted);line-height:1.4}
-  .ctrl{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px}
-  select.field{width:auto;min-width:200px;flex:1;margin-bottom:0}
-  .reveal{margin-top:14px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
-  .rp{border:2px solid var(--line);border-radius:12px;padding:11px;font-size:12px;animation:rise .35s}
-  .rp .rn{font-weight:800;font-size:13px}
-  .rp .rr{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-top:3px}
-
-  .pscore{display:flex;justify-content:space-around;align-items:center;border:2px solid var(--line);
-    border-radius:var(--radius);padding:16px;font-weight:800;background:var(--soft)}
-  .pscore .side{display:flex;flex-direction:column;align-items:center;font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.12em}
-  .pscore .big{font-size:34px;color:var(--ink);font-weight:900;line-height:1.1}
-  .pen{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}
-  .penbtn{border:2px solid var(--line);background:var(--paper);color:var(--ink);border-radius:16px;
-    padding:20px 8px;font-weight:800;font-size:15px;cursor:pointer;transition:.15s;min-height:68px;
-    display:flex;flex-direction:column;align-items:center;gap:4px}
-  .penbtn .a{font-size:22px}
-  .penbtn:hover:not(:disabled){background:var(--ink);color:var(--paper);transform:translateY(-2px);box-shadow:4px 4px 0 var(--line)}
-  .penbtn:disabled{opacity:.35;cursor:not-allowed}
-  .plog{max-height:184px;overflow:auto;border:1px solid var(--line);border-radius:12px;padding:10px;margin-top:12px;font-size:13px;display:flex;flex-direction:column;gap:6px;background:var(--soft)}
-  .plog .ln{animation:rise .3s;padding:3px 0;border-bottom:1px dashed var(--line)}
-  .plog .ln:last-child{border-bottom:none}
-  .pinfo{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:10px;flex-wrap:wrap;gap:6px}
-
-  .games{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
-  .gcard{border:2px solid var(--line);border-radius:var(--radius);padding:20px;animation:rise .45s;display:flex;flex-direction:column;gap:11px;background:var(--paper)}
-  .gcard h3{font-size:14px;letter-spacing:.07em;text-transform:uppercase}
-  .gicon{font-size:24px}
-  .gres{border:1px solid var(--line);border-radius:12px;padding:11px;font-size:13px;min-height:46px;display:flex;align-items:center;flex-wrap:wrap;gap:6px;background:var(--soft)}
-
-  /* ── High / Low (two-step) ── */
-  .hlstage{display:flex;align-items:stretch;gap:12px;margin-top:14px;flex-wrap:wrap}
-  .hlcard{flex:1;min-width:120px;border:2px solid var(--line);border-radius:16px;padding:16px;
-    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:var(--paper);transition:.25s}
-  .hlcard.lit{box-shadow:5px 5px 0 var(--line);transform:translateY(-2px)}
-  .hlcard.win{border-style:double;background:var(--soft)}
-  .hlcard.lose{border-style:dashed;opacity:.85}
-  .hll{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
-  .hln{font-size:46px;font-weight:900;line-height:1;font-family:ui-monospace,Menlo,Consolas,monospace}
-  .hlarrows{display:flex;flex-direction:column;justify-content:center;gap:8px}
-  .hlvs{font-size:22px;font-weight:900;color:var(--muted);align-self:center}
-
-  /* ── Penalty shootout (pitch) ── */
-  .penpitch{position:relative;height:210px;border:2px solid var(--line);border-radius:16px;overflow:hidden;margin-top:14px;
-    background:linear-gradient(180deg,var(--soft) 0%,var(--soft) 46%,var(--paper) 46%,var(--paper) 100%);
-    transition:background .3s}
-  .pengoal{position:absolute;top:14px;left:50%;transform:translateX(-50%);width:78%;height:64px;border:3px solid var(--ink);
-    border-radius:4px;display:grid;grid-template-columns:repeat(3,1fr);background:transparent}
-  .penzone{display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;letter-spacing:.08em;
-    color:var(--muted);border-right:1px dashed var(--line);cursor:pointer;transition:.15s;text-transform:uppercase}
-  .penzone:last-child{border-right:none}
-  .penzone:not(:disabled):hover{background:var(--ink);color:var(--paper)}
-  .penzone:disabled{opacity:.4;cursor:not-allowed}
-  .penball{position:absolute;bottom:26px;left:50%;transform:translateX(-50%);font-size:30px;transition:all .45s cubic-bezier(.2,.8,.2,1);z-index:3}
-  .pengk{position:absolute;top:54px;left:50%;transform:translateX(-50%);font-size:30px;transition:all .45s cubic-bezier(.2,.8,.2,1);z-index:4}
-  .penpitch.kick .penball{top:40px}
-  .penpitch.save .pengk{top:30px}
-  .pips{display:flex;gap:14px;justify-content:center;margin-top:12px;flex-wrap:wrap}
-  .pipcol{display:flex;flex-direction:column;align-items:center;gap:5px}
-  .pipcol .pl{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
-  .piprow{display:flex;gap:5px}
-  .pip{width:14px;height:14px;border-radius:50%;border:2px solid var(--line);background:var(--paper);transition:.2s}
-  .pip.goal{background:var(--ink)}
-  .pip.miss{background:var(--soft);border-style:dashed}
-  .pip.hide{display:none}
-
-  @keyframes fade{from{opacity:0}to{opacity:1}}
-  @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
-  @media(max-width:820px){
-    .stats{grid-template-columns:repeat(3,1fr)}.xi{grid-template-columns:repeat(2,1fr)}
-    .packs{grid-template-columns:1fr}.games{grid-template-columns:1fr}
-  }
-  @media(max-width:520px){
-    .stats{grid-template-columns:repeat(2,1fr)}.wrap{padding:16px 12px 108px}
-    .topbar .brand{display:none}.stat.wide{grid-column:1/-1!important}
-  }
-</style>
 </head>
 <body>
 <div id="warn" class="warn hidden">
@@ -252,6 +42,26 @@
 
   <section id="dash" class="hidden">
     <div class="stats" id="stats"></div>
+
+    <div class="hubgrid">
+      <div class="panel daily" id="dailyPanel">
+        <h3>🎁 Daily Reward</h3>
+        <div class="desc" id="dailyDesc">Check in every day to build your streak.</div>
+        <button class="btn sm" id="dailyBtn">Claim daily</button>
+      </div>
+      <div class="panel" id="analyzePanel">
+        <h3>📊 Squad Analyzer</h3>
+        <div class="desc">Instant read on your Starting XI.</div>
+        <button class="btn ghost sm" id="analyzeBtn">Analyze XI</button>
+        <div class="gres" id="analyzeRes" style="margin-top:12px">Tap analyze for a breakdown.</div>
+      </div>
+    </div>
+
+    <div class="sec-title"><h2>🎖️ Badges</h2><span class="muted mono" id="badgeCount"></span></div>
+    <div class="badges-wrap" id="badgesWrap"></div>
+
+    <div class="sec-title"><h2>📈 Achievements</h2></div>
+    <div class="achv" id="achv"></div>
 
     <div class="sec-title"><h2>Starting XI</h2><span class="muted mono" id="xiCount"></span></div>
     <div class="xi" id="xi"></div>
@@ -420,10 +230,74 @@
       <div class="gres" id="dashRes" style="margin-top:12px">Pick a recipient team name.</div>
     </div>
   </section>
+
+  <section id="searchView" class="hidden">
+    <div class="sec-title" style="margin-top:0"><h2>🔍 Player Search</h2><span class="hb" id="hb"><span class="dot pulse"></span><span id="hbTxt">live</span></span></div>
+    <div class="searchbar">
+      <input class="field" id="searchInput" type="text" placeholder="search by player name…" />
+      <button class="btn sm" id="searchBtn">Search</button>
+    </div>
+    <div class="sg" id="searchResults"></div>
+  </section>
+
+  <section id="academyView" class="hidden">
+    <div class="sec-title" style="margin-top:0"><h2>🏫 Academy</h2><button class="btn sm" id="scoutBtn">Scout · <span id="scoutCost">100</span></button></div>
+    <div class="desc muted" style="font-size:12px;margin-bottom:12px">Discover youth prospects, then promote them into your squad. Scouting costs Metaworks; prospects gain value as they grow.</div>
+    <div class="acad" id="academyList"></div>
+    <div class="gres" id="academyRes" style="margin-top:12px">Your youth prospects appear here.</div>
+  </section>
+
+  <section id="tournamentView" class="hidden">
+    <div class="sec-title" style="margin-top:0"><h2>🏆 Tournament Bracket</h2><button class="btn ghost sm" id="tbvRefresh">Refresh</button></div>
+    <div id="tbv"></div>
+  </section>
+
+  <section id="hubView" class="hidden">
+    <div class="sec-title" style="margin-top:0"><h2>🔎 Scout a Manager</h2></div>
+    <div class="panel">
+      <div class="desc">Look up any registered manager by their team name to see their record, squad power and trophies.</div>
+      <div class="ctrl">
+        <input class="field" id="mgrName" type="text" placeholder="team name (e.g. Oasis FC)" style="flex:1;margin-bottom:0" />
+        <button class="btn sm" id="mgrBtn">Scout</button>
+      </div>
+      <div id="mgrRes" style="margin-top:14px"></div>
+    </div>
+
+    <div class="sec-title"><h2>⚔️ Compare Players</h2></div>
+    <div class="panel">
+      <div class="desc">Compare two of your players head-to-head.</div>
+      <div class="ctrl">
+        <select class="field" id="cmpA"></select>
+        <select class="field" id="cmpB"></select>
+        <button class="btn sm" id="cmpBtn">Compare</button>
+      </div>
+      <div id="cmpRes" style="margin-top:14px"></div>
+    </div>
+
+    <div class="sec-title"><h2>🎯 Bounty Board</h2><button class="btn ghost sm" id="bountyRefresh">Refresh</button></div>
+    <div class="panel" id="ownerBounty" style="display:none">
+      <div class="desc">Owner tools: place a bounty on a manager. Beat them in a PvP match to claim it.</div>
+      <div class="ctrl">
+        <input class="field" id="bountyTarget" type="text" placeholder="target team name" style="flex:1;margin-bottom:0" />
+        <input class="field" id="bountyPrice" type="number" min="1" placeholder="amount" style="max-width:140px;flex:initial;margin-bottom:0" />
+        <button class="btn sm" id="bountySetBtn">Set bounty</button>
+      </div>
+      <div class="gres" id="bountySetRes" style="margin-top:12px">Owner only.</div>
+    </div>
+    <div class="roster" id="bountyList"></div>
+
+    <div class="sec-title"><h2>📜 My Matches</h2></div>
+    <div class="gres" id="myMatchSummary" style="margin-bottom:12px">Loading your record…</div>
+    <div class="timeline" id="myMatches"></div>
+  </section>
 </div>
 
 <nav class="nav hidden" id="nav">
   <button data-view="dash" class="active"><span class="ic">▦</span>Dashboard</button>
+  <button data-view="hubView"><span class="ic">🔎</span>Hub</button>
+  <button data-view="searchView"><span class="ic">🔍</span>Search</button>
+  <button data-view="academyView"><span class="ic">🏫</span>Academy</button>
+  <button data-view="tournamentView"><span class="ic">🏆</span>Cup</button>
   <button data-view="marketView"><span class="ic">🏪</span>Market</button>
   <button data-view="shop"><span class="ic">🛍️</span>Shop</button>
   <button data-view="games"><span class="ic">🎮</span>Games</button>
@@ -457,21 +331,34 @@ function setApiBase(url){
   else { localStorage.removeItem('volta_base'); API_BASE = window.location.origin; }
 }
 function show(view){
-  ['login','dash','marketView','shop','games','lbView'].forEach(s=>$(s).classList.toggle('hidden', s!==view));
+  ['login','dash','hubView','searchView','academyView','tournamentView','marketView','shop','games','lbView'].forEach(s=>$(s).classList.toggle('hidden', s!==view));
   const loggedIn = view!=='login';
   $('topbar').classList.toggle('hidden', !loggedIn);
   $('nav').classList.toggle('hidden', !loggedIn);
   $('nav').querySelectorAll('button').forEach(b=>b.classList.toggle('active', b.dataset.view===view));
   if(view==='lbView') loadLeaderboard();
-  if(view==='marketView') loadMarket();
+  if(view==='marketView'){ loadMarket(); startMarketLive(); } else stopMarketLive();
+  if(view==='searchView') loadSearch();
+  if(view==='academyView') loadAcademy();
+  if(view==='tournamentView') loadTournament();
+  if(view==='hubView') loadHub();
+  if(view==='dash') startHeartbeat();
 }
+let mktTimer = null;
+function startMarketLive(){ if(mktTimer) return; mktTimer = setInterval(()=>{ if(!$('marketView').classList.contains('hidden')) loadMarket(true); }, 15000); }
+function stopMarketLive(){ if(mktTimer){ clearInterval(mktTimer); mktTimer=null; } }
 function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2400); }
 function showWarn(msg){ $('warnMsg').innerHTML = msg; $('warn').classList.remove('hidden'); }
 function hideWarn(){ $('warn').classList.add('hidden'); }
 $('warnX').onclick = hideWarn;
 
+// Extra headers on every request. 'ngrok-skip-browser-warning' bypasses the
+// ngrok free-tier interstitial HTML page that otherwise breaks fetch() with a
+// "Failed to fetch" / CORS error.
+const EXTRA_HEADERS = { 'ngrok-skip-browser-warning': 'true' };
 async function api(path, opts={}){
-  const res = await fetch(apiBase() + path, Object.assign({headers:{'Content-Type':'application/json'}}, opts));
+  const headers = Object.assign({'Content-Type':'application/json'}, EXTRA_HEADERS, opts.headers||{});
+  const res = await fetch(apiBase() + path, Object.assign({}, opts, {headers}));
   const data = await res.json().catch(()=>({}));
   if(!res.ok) throw new Error(data.error || 'request failed');
   return data;
@@ -480,7 +367,7 @@ async function api(path, opts={}){
 // Warn the manager if their running backend lacks the new web features.
 async function checkBackend(){
   try{
-    const r = await fetch(apiBase() + '/api/info');
+    const r = await fetch(apiBase() + '/api/info', {headers:EXTRA_HEADERS});
     if(!r.ok) throw new Error('no info');
     const d = await r.json();
     if((d.version||0) < 2) showWarn('Your web backend is outdated — restart <span class="mono">node web/server.js</span> to unlock Shop &amp; Games.');
@@ -538,7 +425,7 @@ function applyTheme(t){ document.documentElement.setAttribute('data-theme', t); 
 $('themeBtn').onclick = () => { const cur=document.documentElement.getAttribute('data-theme'); applyTheme(cur==='dark'?'light':'dark'); };
 applyTheme(localStorage.getItem('volta_theme') || 'light');
 
-function afterLogin(){ renderDash(); buildShop(); loadExtra(); checkBackend(); show('dash'); }
+function afterLogin(){ renderDash(); buildShop(); loadExtra(); renderBadges(); loadDaily(); checkBackend(); show('dash'); }
 
 // ── dashboard ──
 function renderDash(){
@@ -566,6 +453,7 @@ function renderDash(){
   $('stats').insertAdjacentHTML('beforeend', tv + rb);
   $('stats').querySelectorAll('[data-num]').forEach(el=>{ const n=+el.dataset.num; if(n) animateNum(el,n); });
   setTimeout(()=>fillBars($('stats')), 60);
+  if($('achv')) renderAchievements();
 
   const map = Object.fromEntries(ME.roster.map(p=>[p.id,p]));
   const xi = ME.startingXI.filter(id=>map[id]);
@@ -581,7 +469,7 @@ function renderDash(){
 function statLine(p){
   const s=p.stats;
   if(p.role==='goalkeeper') return `REF ${s.reflex} · POS ${s.positioning} · ANT ${s.anticipation} · STR ${s.strength} · COM ${s.composure}`;
-  return `PAC ${s.pace} · SKL ${s.skill} · SHO ${s.shooting} · STA ${s.stamina} · COM ${s.composer}`;
+  return `PAC ${s.pace} · SKL ${s.skill} · SHO ${s.shooting} · STA ${s.stamina} · COM ${s.composure}`;
 }
 function playerCard(p, where){
   const moveBtn = where==='xi'
@@ -685,6 +573,168 @@ async function loadExtra(){
   }catch(e){ $('topPlayers').innerHTML = `<div class="muted">Top players unavailable.</div>`; }
 }
 
+// ── BADGES + ACHIEVEMENTS + DAILY (dashboard) ──
+let BADGE_CATALOG = null;
+async function loadBadgeCatalog(){
+  if(BADGE_CATALOG) return BADGE_CATALOG;
+  try{ const { catalog } = await api('/api/badges'); BADGE_CATALOG = catalog || {}; }
+  catch{ BADGE_CATALOG = {}; }
+  return BADGE_CATALOG;
+}
+async function renderBadges(){
+  const cat = await loadBadgeCatalog();
+  const owned = ME.badges || [];
+  $('badgeCount').textContent = `${owned.length}/${Object.keys(cat).length}`;
+  const keys = Object.keys(cat);
+  $('badgesWrap').innerHTML = keys.length ? keys.map(k=>{
+    const b = cat[k]; const has = owned.includes(k);
+    return `<div class="badge-chip ${has?'earned':'locked'}" title="${b.desc||''}">
+      <span class="be">${b.emoji||'🏅'}</span><span class="bl">${b.label||k}</span></div>`;
+  }).join('') : `<div class="muted">No badges available.</div>`;
+}
+function renderAchievements(){
+  const wins = ME.wins||0, goals = ME.totalGoals||0, streak = ME.winStreak||0, bal = ME.currency||0, cups = ME.tournamentWins||0;
+  const items = [
+    ['💯','Centurion','100 career wins',wins,100],
+    ['⚽','Goal Machine','100 career goals',goals,100],
+    ['🔥','10-Win Streak','win 10 in a row',streak,10],
+    ['💎','High Roller','hold 10,000 Metaworks',bal,10000],
+    ['🏆','Champion','win a tournament',cups,1],
+  ];
+  $('achv').innerHTML = items.map(([e,t,d,cur,goal])=>{
+    const pct = Math.max(0,Math.min(100,Math.round(cur/goal*100)));
+    const done = cur>=goal;
+    return `<div class="achv-item ${done?'done':''}">
+      <div class="achv-top"><span class="achv-e">${e}</span><span class="achv-t">${t}</span>${done?'<span class="tag">DONE</span>':''}</div>
+      <div class="muted" style="font-size:11px">${d}</div>
+      <div class="bar" style="margin-top:8px"><i data-w="${pct}"></i></div>
+      <div class="rid mono" style="margin-top:4px">${Math.min(cur,goal).toLocaleString()} / ${goal.toLocaleString()}</div>
+    </div>`;
+  }).join('');
+  setTimeout(()=>fillBars($('achv')),60);
+}
+async function loadDaily(){
+  try{
+    const d = await api('/api/daily?token='+TOKEN);
+    if(d.claimedToday){
+      $('dailyDesc').innerHTML = `✅ Claimed today · 🔥 streak <b>${d.streak}</b>. Next: ${d.nextReward.toLocaleString()}`;
+      $('dailyBtn').disabled = true; $('dailyBtn').textContent = 'Claimed ✓';
+    } else {
+      $('dailyDesc').innerHTML = `Ready to claim <b>${d.nextReward.toLocaleString()}</b> Metaworks · 🔥 streak <b>${d.streak}</b>.`;
+      $('dailyBtn').disabled = false; $('dailyBtn').textContent = 'Claim daily';
+    }
+  }catch(e){ $('dailyDesc').textContent = 'Daily unavailable.'; }
+}
+$('dailyBtn').onclick = async ()=>{
+  try{
+    const r = await api('/api/daily', {method:'POST', body:JSON.stringify({token:TOKEN})});
+    ME=r.user; renderDash(); loadDaily();
+    toast(`+${r.reward.toLocaleString()} · 🔥 ${r.streak} day streak`);
+  }catch(e){ toast(e.message); }
+};
+$('analyzeBtn').onclick = async ()=>{
+  $('analyzeRes').textContent = 'Analyzing…';
+  try{
+    const a = await api('/api/squad/analyze?token='+TOKEN);
+    if(a.empty){ $('analyzeRes').textContent = 'No players in your XI yet.'; return; }
+    $('analyzeRes').innerHTML =
+      `<div class="row"><span class="mini">OVR ${a.avgOvr}</span><span class="mini">🔋 ${a.avgCondition}%</span><span class="mini">🤝 ${a.avgChem}%</span><span class="mini">🔥 ${a.hotForm} hot</span></div>
+       <div class="row"><span class="mini">⭐ Best: ${a.strongest.name} (${a.strongest.total})</span><span class="mini">Weakest: ${a.weakest.name} (${a.weakest.total})</span></div>
+       <div style="margin-top:8px">${a.tips.map(t=>`<div class="mini" style="display:block;margin-top:5px">💡 ${t}</div>`).join('')}</div>`;
+  }catch(e){ $('analyzeRes').textContent = e.message; }
+};
+
+// ── HUB (manager scout · compare · bounties · my matches) ──
+async function loadHub(){
+  $('ownerBounty').style.display = (ME && ME.isOwner) ? 'block' : 'none';
+  fillCompareSelects();
+  loadBounties();
+  loadMyMatches();
+}
+$('mgrBtn').onclick = loadManager;
+$('mgrName').addEventListener('keydown', e=>{ if(e.key==='Enter') loadManager(); });
+async function loadManager(){
+  const name = $('mgrName').value.trim();
+  if(!name) return toast('Enter a team name.');
+  $('mgrRes').innerHTML = '<div class="muted">Scouting…</div>';
+  try{
+    const { manager:m } = await api('/api/manager?name='+encodeURIComponent(name));
+    const cat = await loadBadgeCatalog();
+    const badges = (m.badges||[]).map(k=>`<span class="badge-chip earned" title="${(cat[k]||{}).desc||''}"><span class="be">${(cat[k]||{}).emoji||'🏅'}</span><span class="bl">${(cat[k]||{}).label||k}</span></span>`).join('') || '<span class="muted">No badges yet.</span>';
+    const top = (m.topPlayers||[]).map(p=>`<span class="mini">${p.name} (${p.total})</span>`).join('') || '<span class="muted">No players.</span>';
+    $('mgrRes').innerHTML = `
+      <div class="score">${m.name}</div>
+      <div class="row" style="margin-top:8px">
+        <span class="mini">MMR ${m.mmr}</span><span class="mini">${m.wins}W·${m.losses}L·${m.draws}D</span>
+        <span class="mini">Win ${m.winRate}%</span><span class="mini">Power ${m.squadPower}</span>
+        <span class="mini">🏆 ${m.tournamentWins}</span><span class="mini">🔥 ${m.winStreak}</span>
+        ${m.bounty?`<span class="mini">🎯 Bounty ${m.bounty.toLocaleString()}</span>`:''}
+      </div>
+      <div class="row" style="margin-top:8px">${top}</div>
+      <div class="badges-wrap" style="margin-top:10px">${badges}</div>`;
+  }catch(e){ $('mgrRes').innerHTML = `<div class="muted">${e.message}</div>`; }
+}
+function fillCompareSelects(){
+  if(!ME) return;
+  const opts = ME.roster.slice().sort((a,b)=>b.total-a.total).map(p=>`<option value="${p.id}">${p.name} (${p.id}) · ${p.total}</option>`).join('');
+  $('cmpA').innerHTML = opts; $('cmpB').innerHTML = opts;
+  if(ME.roster[1]) $('cmpB').value = ME.roster[1].id;
+}
+$('cmpBtn').onclick = ()=>{
+  const a = ME.roster.find(p=>p.id===$('cmpA').value);
+  const b = ME.roster.find(p=>p.id===$('cmpB').value);
+  if(!a||!b) return toast('Pick two players.');
+  if(a.id===b.id) return toast('Pick two different players.');
+  const keys = a.role==='goalkeeper'
+    ? [['reflex','REF'],['positioning','POS'],['anticipation','ANT'],['strength','STR'],['composure','COM']]
+    : [['pace','PAC'],['skill','SKL'],['shooting','SHO'],['stamina','STA'],['composure','COM']];
+  const rows = keys.map(([k,l])=>{
+    const av=a.stats[k]||0, bv=b.stats[k]||0;
+    return `<div class="cmp-row"><span class="cmp-v ${av>=bv?'hi':''}">${av}</span><span class="cmp-l">${l}</span><span class="cmp-v ${bv>=av?'hi':''}">${bv}</span></div>`;
+  }).join('');
+  $('cmpRes').innerHTML = `
+    <div class="cmp-head"><span class="cmp-v ${a.total>=b.total?'hi':''}">${a.name}<br><span class="rid">OVR ${a.total}</span></span>
+    <span class="cmp-l">vs</span>
+    <span class="cmp-v ${b.total>=a.total?'hi':''}">${b.name}<br><span class="rid">OVR ${b.total}</span></span></div>${rows}`;
+};
+async function loadBounties(){
+  try{
+    const { bounties } = await api('/api/bounties');
+    $('bountyList').innerHTML = bounties.length ? bounties.map(b=>`
+      <div class="pc"><div class="nm"><span>${b.name}</span><span class="rid mono">${b.mmr} MMR</span></div>
+      <div class="row"><span class="mini">🎯 ${b.bounty.toLocaleString()}</span><span class="mini">${b.wins}W·${b.losses}L</span></div></div>`).join('')
+      : `<div class="muted">No active bounties right now.</div>`;
+  }catch(e){ $('bountyList').innerHTML = `<div class="muted">Bounty board unavailable.</div>`; }
+}
+$('bountyRefresh').onclick = loadBounties;
+$('bountySetBtn').onclick = async ()=>{
+  const target = $('bountyTarget').value.trim();
+  const price = parseInt($('bountyPrice').value,10)||0;
+  if(!target||!price) return toast('Enter a target and amount.');
+  try{
+    const r = await api('/api/bounty/set', {method:'POST', body:JSON.stringify({token:TOKEN, target, price})});
+    $('bountySetRes').textContent = `🎯 Bounty ${r.price.toLocaleString()} placed on ${r.target} ✓`;
+    toast('Bounty set ✓'); loadBounties();
+  }catch(e){ $('bountySetRes').textContent = e.message; }
+};
+async function loadMyMatches(){
+  try{
+    const { matches, summary } = await api('/api/mymatches?token='+TOKEN);
+    $('myMatchSummary').textContent = `Last ${matches.length}: ${summary.wins}W · ${summary.losses}L · ${summary.draws}D`;
+    $('myMatches').innerHTML = matches.length ? matches.map(m=>{
+      const badge = m.outcome==='W'?'<span class="badge bw">W</span>':m.outcome==='L'?'<span class="badge bl">L</span>':'<span class="badge bd">D</span>';
+      const d = new Date(m.date); const ds = d.toLocaleDateString()+' '+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+      const scorers = (m.goalScorers||[]).map(g=>`${g.minute}' ${g.player}`).join(' · ') || '—';
+      return `<div class="tl-item"><div class="tl-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+          <div class="score">vs ${m.opponent} — ${m.myScore}–${m.oppScore}</div>${badge}</div>
+        <div class="muted" style="font-size:12px;margin-top:4px">${ds}</div>
+        <div class="row" style="margin-top:6px"><span class="mini">⚽ ${scorers}</span>${m.mvp?`<span class="mini">⭐ ${m.mvp.name}</span>`:''}</div>
+      </div></div>`;
+    }).join('') : `<div class="muted">No matches yet — play with <span class="mono">!play</span> in WhatsApp.</div>`;
+  }catch(e){ $('myMatches').innerHTML = `<div class="muted">Match history unavailable.</div>`; }
+}
+
 // ── SHOP ──
 function fillPlayerSelect(sel){
   sel.innerHTML = ME.roster.slice().sort((a,b)=>b.total-a.total)
@@ -755,22 +805,25 @@ function setZones(enabled){
 }
 function penLog(msg){ const d=document.createElement('div'); d.className='ln'; d.textContent=msg; $('penLog').prepend(d); }
 
-// Move the ball / keeper toward a zone for a quick visual kick.
-function animateKick(who, dir){
-  const pitch = $('penPitch');
-  const gk = $('penGK');
-  const ball = $('penBall');
-  const off = dir === 'L' ? -70 : dir === 'R' ? 70 : 0;
-  if (who === 'shoot') {
+const penOff = (d)=> d === 'L' ? -70 : d === 'R' ? 70 : 0;
+// Animate both ball and keeper to their true directions from the server result,
+// then flash the outcome (goal = accent, save = red).
+function animateResult(last){
+  const pitch=$('penPitch'), gk=$('penGK'), ball=$('penBall');
+  if(last.type==='shoot'){
     pitch.classList.add('kick');
-    ball.style.transform = `translateX(calc(-50% + ${off}px))`;
+    ball.style.transform = `translateX(calc(-50% + ${penOff(last.dir)}px))`;
+    gk.style.transform   = `translateX(calc(-50% + ${penOff(last.aiDir)}px))`;
+    pitch.classList.add(last.goal ? 'flash-goal' : 'flash-save');
   } else {
     pitch.classList.add('save');
-    gk.style.transform = `translateX(calc(-50% + ${off}px))`;
+    ball.style.transform = `translateX(calc(-50% + ${penOff(last.aiDir)}px))`;
+    gk.style.transform   = `translateX(calc(-50% + ${penOff(last.dir)}px))`;
+    pitch.classList.add(last.saved ? 'flash-save' : 'flash-goal');
   }
 }
 function resetPitch(){
-  const pitch=$('penPitch'); pitch.classList.remove('kick','save');
+  const pitch=$('penPitch'); pitch.classList.remove('kick','save','flash-goal','flash-save');
   $('penBall').style.transform='translateX(-50%)'; $('penGK').style.transform='translateX(-50%)';
 }
 function renderPips(){
@@ -796,17 +849,17 @@ $('penGoal').querySelectorAll('.penzone').forEach(z=> z.onclick = async ()=>{
   if(!penActive) return;
   const dir=z.dataset.dir;
   setZones(false);
-  animateKick(penPhase, dir);
   try{
     const r = await api('/api/penalty/action', {method:'POST', body:JSON.stringify({token:TOKEN, action: penPhase, dir})});
     penLog(r.message);
-    // record pip for the turn that just happened
+    // record pip + animate the true outcome for the turn that just happened
     if (r.last) {
+      animateResult(r.last);
       if (r.last.type==='shoot') penResults.you.push(!!r.last.goal);
       else penResults.ai.push(!!r.last.saved);
       renderPips();
     }
-    setTimeout(()=>{ resetPitch(); }, 480);
+    setTimeout(()=>{ resetPitch(); }, 900);
     if(r.finished){
       penActive=false; setZones(false); $('penPhase').textContent='Shootout over. Start a new one!';
       if(r.result) toast(`You ${r.result}${r.payout?` (${r.payout>=0?'+':''}${r.payout})`:''}!`);
@@ -903,8 +956,20 @@ $('settingsBtn').onclick = () => {
       <button class="btn sm" id="setSave">Save</button>
       <button class="btn ghost sm" id="setTest">Test connection</button>
     </div>
-    <div class="gres" id="setRes" style="margin-top:12px">Saved to this device.</div>`;
+    <div class="gres" id="setRes" style="margin-top:12px">Saved to this device.</div>
+    <div class="sec-title" style="margin-top:20px"><h2>Data</h2></div>
+    <div class="desc muted" style="font-size:12px;margin-bottom:10px">Download a snapshot of your manager profile & squad as JSON.</div>
+    <button class="btn ghost sm" id="setExport">⬇ Export my data</button>`;
   $('modal').classList.remove('hidden');
+  $('setExport').onclick = () => {
+    if(!ME) return;
+    const blob = new Blob([JSON.stringify(ME, null, 2)], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `volta-${(ME.name||'manager').replace(/\s+/g,'_')}.json`;
+    a.click(); URL.revokeObjectURL(a.href);
+    toast('Data exported ✓');
+  };
   $('setSave').onclick = () => {
     setApiBase($('setBase').value);
     $('setRes').textContent = 'Saved ✓ Reconnecting…';
@@ -912,7 +977,7 @@ $('settingsBtn').onclick = () => {
   };
   $('setTest').onclick = async () => {
     try {
-      const r = await fetch(apiBase() + '/api/info');
+      const r = await fetch(apiBase() + '/api/info', {headers:EXTRA_HEADERS});
       if (!r.ok) throw new Error('bad status');
       const d = await r.json();
       $('setRes').textContent = `Connected ✓ backend v${d.version}`;
@@ -935,14 +1000,14 @@ function mktPlayerCard(l){
     ${mineTag}
   </div>`;
 }
-async function loadMarket(){
+async function loadMarket(silent){
   try{
     const { listings } = await api('/api/market' + (TOKEN ? '?token='+TOKEN : ''));
     $('mktList').innerHTML = listings.length ? listings.map(mktPlayerCard).join('')
       : `<div class="muted">Market is empty — the AI is restocking…</div>`;
     $('mktList').querySelectorAll('[data-buy]').forEach(b=> b.onclick = ()=> buyListing(b.dataset.buy));
-    fillMarketSelects();
-  }catch(e){ $('mktList').innerHTML = `<div class="muted">Could not load market. Check Settings → backend URL. (${e.message})</div>`; }
+    if(!silent) fillMarketSelects();
+  }catch(e){ if(!silent) $('mktList').innerHTML = `<div class="muted">Could not load market. Check Settings → backend URL. (${e.message})</div>`; }
 }
 $('mktRefresh').onclick = loadMarket;
 async function buyListing(id){
@@ -996,6 +1061,89 @@ $('dashSquadBtn').onclick = async () => {
     toast('Squad dashed ✓'); loadMarket();
   }catch(e){ $('dashRes').textContent = e.message; }
 };
+
+// ── SEARCH (web) ──
+async function loadSearch(){
+  const q = $('searchInput').value.trim();
+  try{
+    const { results } = await api('/api/search' + (q ? '?q='+encodeURIComponent(q) : ''));
+    $('searchResults').innerHTML = results.length ? results.map(p=>`
+      <div class="pc">
+        <div class="nm"><span>${p.name}</span><span class="rid mono">${p.id}</span></div>
+        <div class="row"><span class="mini">OVR ${p.total}</span>${rarityTag(p.rarity)}${posTag(p.role==='goalkeeper'?'GK':'OF')}<span class="mini">🤝 ${p.chemistry}%</span></div>
+        <div class="row"><span class="mini">${p.isListed?('💰 '+p.price):'not on market'}</span><span class="mini">${p.ownerId&&p.ownerId.startsWith('club:')?p.ownerId.slice(5).replace(/_/g,' '):(p.ownerId==='AI_MARKET'?'AI Market':'Manager')}</span></div>
+      </div>`).join('') : `<div class="muted">No players found.</div>`;
+  }catch(e){ $('searchResults').innerHTML = `<div class="muted">Search failed: ${e.message}</div>`; }
+}
+$('searchBtn').onclick = loadSearch;
+$('searchInput').addEventListener('keydown', e=>{ if(e.key==='Enter') loadSearch(); });
+
+// ── ACADEMY (web) ──
+async function loadAcademy(){
+  try{
+    const { youth, scoutCost, slots } = await api('/api/academy?token='+TOKEN);
+    $('scoutCost').textContent = scoutCost;
+    $('academyList').innerHTML = youth.length ? youth.map(p=>`
+      <div class="pc">
+        <div class="nm"><span>${p.name}</span><span class="rid mono">${p.id}</span></div>
+        <div class="row"><span class="mini">OVR ${p.total}</span>${rarityTag(p.rarity)}<span class="mini">Pot ${p.potential}</span><span class="mini">${p.age}y</span></div>
+        <div class="row" style="margin-top:6px"><button class="btn ghost sm" data-promote="${p.id}">Promote → Squad</button></div>
+      </div>`).join('') : `<div class="muted">No prospects. Scout one for ${scoutCost} Metaworks.</div>`;
+    $('academyList').querySelectorAll('[data-promote]').forEach(b=> b.onclick = async ()=>{
+      try{ const { user } = await api('/api/academy/promote', {method:'POST', body:JSON.stringify({token:TOKEN, youthId:b.dataset.promote})}); ME=user; toast('Promoted ✓'); loadAcademy(); }
+      catch(e){ toast(e.message); }
+    });
+  }catch(e){ $('academyList').innerHTML = `<div class="muted">Academy unavailable.</div>`; }
+}
+$('scoutBtn').onclick = async ()=>{
+  try{ const { user, player } = await api('/api/academy/scout', {method:'POST', body:JSON.stringify({token:TOKEN})}); ME=user; toast(`Scouted ${player.name} ✓`); loadAcademy(); }
+  catch(e){ toast(e.message); }
+};
+
+// ── TOURNAMENT BRACKET VIEW (TBV) ──
+async function loadTournament(){
+  try{
+    const t = await api('/api/tournament');
+    if(!t.active){ $('tbv').innerHTML = `<div class="muted">No tournament running right now. Start one in WhatsApp with <span class="mono">!tournament start</span>.</div>`; return; }
+    const catLabel = t.category ? t.category.toUpperCase() : 'CUP';
+    let html = `<div class="panel"><div class="row" style="margin-bottom:8px">
+      <span class="mini">🏆 ${catLabel}</span><span class="mini">💲 ${t.prize} prize</span><span class="mini">${t.players} entrants</span></div></div>`;
+    html += `<div class="bracket">`;
+    const roundLabels = ['Final','Semi-finals','Quarter-finals','Round of 16'];
+    t.rounds.forEach((r, i)=>{
+      const label = roundLabels[r.matches.length-1] || `Round ${i+1}`;
+      html += `<div class="br-round"><div class="br-h">${label}</div>`;
+      r.matches.forEach(m=>{
+        const wa = m.winner && m.winner===m.a;
+        const wb = m.winner && m.winner===m.b;
+        html += `<div class="br-match">
+          <span class="${wa?'win':''}">${m.a}${wa?' ✅':''}</span>
+          <span class="vs">vs</span>
+          <span class="${wb?'win':''}">${m.b}${wb?' ✅':''}</span></div>`;
+      });
+      html += `</div>`;
+    });
+    html += `</div>`;
+    $('tbv').innerHTML = html;
+  }catch(e){ $('tbv').innerHTML = `<div class="muted">Bracket unavailable.</div>`; }
+}
+$('tbvRefresh').onclick = loadTournament;
+
+// ── HEARTBEAT monitor (keeps the backend connection healthy + shows status) ──
+let hbTimer = null;
+function setHb(up){
+  $('hb').classList.toggle('down', !up);
+  $('hbTxt').textContent = up ? 'live' : 'offline';
+}
+async function pingHeartbeat(){
+  try{ const r = await fetch(apiBase()+'/api/heartbeat', {headers:EXTRA_HEADERS}); if(!r.ok) throw 0; const d = await r.json(); setHb(true); return d; }
+  catch{ setHb(false); return null; }
+}
+function startHeartbeat(){
+  if(hbTimer) return;
+  pingHeartbeat();
+  hbTimer = setInterval(pingHeartbeat, 30000);
+}
 
 // ── boot ──
 (async function boot(){
