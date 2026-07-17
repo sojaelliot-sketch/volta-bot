@@ -4,26 +4,19 @@
 const User = require('../models/User');
 const { money } = require('../utils/formatter');
 const { sendText } = require('../utils/messaging');
-
-function looksLikeJid(arg) {
-  if (!arg) return false;
-  return /^\d{6,}$/.test(arg) || arg.includes('@');
-}
+const { resolveTarget } = require('./router');
 
 async function handle({ sock, msg, jid, sender, args, replyTo, mentioned }) {
   const amount = parseInt(args[0], 10);
   if (!amount || amount <= 0) {
-    await sendText(sock, jid, `⚠️ Usage: *!give [amount] @user*  (or reply to them with *!give [amount]*).`, msg);
+    await sendText(sock, jid, `⚠️ Usage: *!give [amount] @user*  (reply, @mention, or type their name).`, msg);
     return;
   }
 
-  // recipient: reply / mention preferred, else a jid passed as 2nd arg
-  let targetJid = replyTo || mentioned;
-  if (!targetJid && args[1] && looksLikeJid(args[1])) {
-    targetJid = args[1].includes('@') ? args[1] : `${args[1]}@s.whatsapp.net`;
-  }
+  // recipient: reply / mention / name / explicit jid as 2nd arg
+  let targetJid = resolveTarget(args.slice(1), { replyTo, mentioned });
   if (!targetJid) {
-    await sendText(sock, jid, `⚠️ Tag or reply to the person you want to give Metaworks to.`, msg);
+    await sendText(sock, jid, `⚠️ Tag, reply to, or type the name of the person you want to give Metaworks to.`, msg);
     return;
   }
   if (targetJid === sender) {

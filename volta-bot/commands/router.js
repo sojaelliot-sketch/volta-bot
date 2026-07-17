@@ -99,7 +99,7 @@ const handlers = {
   setbounty: () => require('./setbounty'),
   academy: () => require('./academy'),
   scout: () => require('./academy'),
-  promote: () => require('./academy'),
+  promoteacademy: () => require('./academy'),
   on: () => require('./botstate'),
   off: () => require('./botstate'),
   reload: () => require('./reload'),
@@ -110,7 +110,7 @@ const handlers = {
   ban: () => require('./mod'),
   unban: () => require('./mod'),
   warn: () => require('./mod'),
-  promote: () => require('./mod'),
+  promote: () => require('./promote'),
   demote: () => require('./mod'),
   kick: () => require('./mod'),
   mods: () => require('./mod'),
@@ -149,6 +149,24 @@ function looksLikeJid(arg) {
   return /^\d{6,}$/.test(arg) || arg.includes('@');
 }
 
+// Resolve a target manager by an explicit jid/id, a reply, a @mention, or a
+// manager NAME (typed as text). The name lookup lets anyone do e.g.
+//   !info Oasis FC      !give 100 John     !dash @Maria
+// without needing a raw number or a quoted message. Returns a normalized jid.
+function resolveByName(arg) {
+  if (!arg) return null;
+  const s = String(arg).replace(/^@/, '').trim().toLowerCase();
+  if (!s) return null;
+  let found = null;
+  for (const u of User.all()) {
+    if (!u || !u.registered) continue;
+    const name = String(u.name || '').toLowerCase();
+    if (name === s) return User.normalizeJid(u.whatsappId);
+    if (name.includes(s) && !found) found = u; // keep first partial match as fallback
+  }
+  return found ? User.normalizeJid(found.whatsappId) : null;
+}
+
 function resolveTarget(args, ctx = {}) {
   if (args && args.length && looksLikeJid(args[0])) {
     const a = args[0].trim();
@@ -156,6 +174,8 @@ function resolveTarget(args, ctx = {}) {
   }
   if (ctx.replyTo) return ctx.replyTo;
   if (ctx.mentioned) return ctx.mentioned;
+  // Last resort: a manager NAME passed as the first arg (e.g. !info John).
+  if (args && args.length) return resolveByName(args[0]);
   return null;
 }
 

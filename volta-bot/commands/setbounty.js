@@ -6,12 +6,7 @@
 const User = require('../models/User');
 const { money } = require('../utils/formatter');
 const { sendText } = require('../utils/messaging');
-
-function toJid(arg) {
-  const a = (arg || '').trim();
-  if (!a) return null;
-  return a.includes('@') ? a : `${a}@s.whatsapp.net`;
-}
+const { resolveTarget } = require('./router');
 
 async function handle({ sock, msg, jid, sender, args, replyTo, mentioned }) {
   if (!User.isOwner(sender)) {
@@ -20,16 +15,13 @@ async function handle({ sock, msg, jid, sender, args, replyTo, mentioned }) {
   }
   const price = parseInt(args[0], 10);
   if (!price || price <= 0) {
-    await sendText(sock, jid, `⚠️ Usage: *!setbounty [price] [@user or reply]*`, msg);
+    await sendText(sock, jid, `⚠️ Usage: *!setbounty [price] [@user, reply, or name]*`, msg);
     return;
   }
 
-  let target = replyTo || mentioned;
-  if (!target && args[1] && /^\d{6,}$/.test(args[1])) target = toJid(args[1]);
-  else if (!target && args[1] && args[1].includes('@')) target = args[1];
-
+  let target = resolveTarget(args.slice(1), { replyTo, mentioned });
   if (!target) {
-    await sendText(sock, jid, `⚠️ Tag, reply to, or give the id of the manager you're putting a bounty on.`, msg);
+    await sendText(sock, jid, `⚠️ Tag, reply to, or give the name/id of the manager you're putting a bounty on.`, msg);
     return;
   }
   const u = User.getByWhatsappId(target);

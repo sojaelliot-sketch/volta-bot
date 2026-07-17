@@ -699,13 +699,12 @@ async function finishPvP(s) {
     tourney.resolveByResult(s.homeId, s.awayId, winnerId);
   }
 
-  // ── MVP: top scorer, tie-broken by total involvement ──
-  const statEntries = Object.entries(s.scorerStats || {});
-  let mvp = null;
-  if (statEntries.length) {
-    statEntries.sort((a, b) => (b[1].goals - a[1].goals) || (b[1].shots - a[1].shots));
-    mvp = statEntries[0][1];
-  }
+  // ── MVP: goals + involvement + rating, not just raw goals ──
+  const ratingOf = (id) => {
+    const p = Player.getById(id);
+    return p ? Player.totalStats(p) : 0;
+  };
+  const mvp = pickMVP(s.scorerStats, ratingOf);
 
   let mvpBonus = 0;
   if (mvp && mvp.team) {
@@ -890,10 +889,21 @@ async function endMatch(session) {
   });
 
   const homeScorer = goalScorers.find(g => g.team === 'home');
-  if (homeWon && homeScorer?.id) {
-    const mvp = Player.getById(homeScorer.id);
-    if (mvp) {
-      Player.update(homeScorer.id, { manOfTheMatch: (mvp.manOfTheMatch || 0) + 1 });
+  // Build a per-player stats map so the MVP picks on goals + involvement + rating
+  // (not just "first goal scorer"), matching the interactive-match formula.
+  const statsMap = {};
+  for (const g of (goalScorers || [])) {
+    if (!g.id) continue;
+    statsMap[g.id] = statsMap[g.id] || { id: g.id, goals: 0, shots: 0, name: g.player, team: g.team };
+    statsMap[g.id].goals += 1;
+    statsMap[g.id].shots += 1;
+  }
+  const ratingOf = (id) => { const p = Player.getById(id); return p ? Player.totalStats(p) : 0; };
+  const mvp = pickMVP(statsMap, ratingOf);
+  if (homeWon && mvp?.id) {
+    const mp = Player.getById(mvp.id);
+    if (mp) {
+      Player.update(mvp.id, { manOfTheMatch: (mp.manOfTheMatch || 0) + 1 });
       const hu = User.getByWhatsappId(homeId) || {};
       User.update(homeId, { currency: (hu.currency || 0) + ECONOMY.MVP_BONUS });
     }
@@ -993,6 +1003,24 @@ function calcRank(mmr) {
   let rank = 'Bronze';
   for (const r of RANKS) if (mmr >= r.min) rank = r.label;
   return rank;
+}
+
+// Pick the Man of the Match from a scorerStats map ({ id, goals, shots, name, team }).
+// Goals dominate, but a player who dictates play (high shot involvement) or is a
+// standout on rating also gets credit — so a midfielder pulling the strings can
+// beat a one-goal striker on a quiet night. Tie-broken by rating, then shots.
+function pickMVP(scorerStats, ratingOf) {
+  const entries = Object.entries(scorerStats || {});
+  if (!entries.length) return null;
+  let best = null;
+  let bestScore = -1;
+  for (const [id, s] of entries) {
+    const rating = ratingOf ? (ratingOf(id) || 0) : 0;
+    // goals ×6, then involvement (shots) ×1, then a gentle rating nudge.
+    const score = (s.goals || 0) * 6 + (s.shots || 0) * 1 + rating * 0.01;
+    if (score > bestScore) { bestScore = score; best = { id, ...s }; }
+  }
+  return best;
 }
 
 async function decayConditions(squad) {

@@ -3,6 +3,7 @@
 // Search the player pool by real name (not ID) and show club + market price.
 const db = require('../config/database');
 const Player = require('../models/Player');
+const User = require('../models/User');
 const { RARITY } = require('../config/constants');
 const { money, bar } = require('../utils/formatter');
 const { sendText } = require('../utils/messaging');
@@ -11,7 +12,9 @@ function clubName(ownerId) {
   if (!ownerId) return 'Free Agent';
   if (ownerId.startsWith('club:')) return ownerId.slice(5).replace(/_/g, ' ');
   if (ownerId === 'AI_MARKET') return 'AI Market';
-  return 'Manager';
+  // A real manager owns this player — show their manager name (not just "Manager").
+  const owner = User.getByWhatsappId(ownerId);
+  return owner ? owner.name : 'Manager';
 }
 
 async function handle({ sock, msg, jid, sender, args, user }) {
@@ -52,7 +55,8 @@ async function handle({ sock, msg, jid, sender, args, user }) {
       const short = l.id.slice(0, 6);
       text += `   💰 ${money(l.price)} · 🆔 \`${short}\` — *!buy ${short}*\n`;
     } else {
-      text += `   (not on the market)\n`;
+      const owner = User.getByWhatsappId(p.ownerId);
+      text += `   🛡️ Not on the market — managed by *${owner ? owner.name : 'a manager'}*\n`;
     }
     text += `\n`;
   }

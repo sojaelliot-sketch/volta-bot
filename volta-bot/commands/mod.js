@@ -11,28 +11,7 @@ const User = require('../models/User');
 const Player = require('../models/Player');
 const { MODERATION } = require('../config/constants');
 const { sendText } = require('../utils/messaging');
-
-function toJid(arg) {
-  const a = (arg || '').trim();
-  if (!a) return null;
-  return a.includes('@') ? a : `${a}@s.whatsapp.net`;
-}
-
-// Resolve a target user from reply / mention / id-arg (no need to type IDs).
-function looksLikeJid(arg) {
-  if (!arg) return false;
-  // Only treat it as an explicit id if it's a raw number or a real WhatsApp
-  // jid — a plain "@DisplayName" mention must fall through to the mention/reply.
-  return /^\d{6,}$/.test(arg) || arg.includes('@s.whatsapp.net');
-}
-function resolveTarget(args, ctx = {}) {
-  if (args && args.length && looksLikeJid(args[0])) {
-    return toJid(args[0]);
-  }
-  if (ctx.replyTo) return ctx.replyTo;
-  if (ctx.mentioned) return ctx.mentioned;
-  return null;
-}
+const { resolveTarget } = require('./router');
 
 function can(actor, action) {
   if (User.isOwner(actor)) return true;

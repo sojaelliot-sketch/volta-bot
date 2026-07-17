@@ -10,6 +10,7 @@ const { PENALTY, MATCH } = require('../config/constants');
 const { money } = require('../utils/formatter');
 const { sendText } = require('../utils/messaging');
 const { pick } = require('../utils/random');
+const { resolveTarget } = require('./router');
 const tourney = require('../game-engine/tournament');
 
 // active shootouts keyed by user jid (vs AI) or pair key (pvp)
@@ -64,7 +65,7 @@ async function handle({ sock, msg, jid, sender, cmd, args, replyTo, mentioned })
   if (cmd !== 'penalty') return;
 
   // ── PvP simulated shootout ──
-  const target = replyTo || mentioned;
+  const target = resolveTarget(args, { replyTo, mentioned });
   if (target && target !== sender) {
     const me = User.getByWhatsappId(sender);
     const them = User.getByWhatsappId(target);

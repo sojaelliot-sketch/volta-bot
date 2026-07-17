@@ -9,6 +9,7 @@ const transfer = require('../models/transfer');
 const { RARITY } = require('../config/constants');
 const { money } = require('../utils/formatter');
 const { sendText } = require('../utils/messaging');
+const { resolveTarget } = require('./router');
 
 function looksLikeJid(arg) {
   if (!arg) return false;
@@ -31,8 +32,11 @@ async function handle({ sock, msg, jid, sender, args, replyTo, mentioned }) {
     }
   }
 
+  // Fall back to a manager NAME typed as text (e.g. !dash John).
+  if (!targetJid) targetJid = resolveTarget(args, { replyTo, mentioned });
+
   if (!targetJid) {
-    await sendText(sock, jid, `⚠️ Tag or reply to the manager you want to dash to.\nUsage:\n*!dash [playerID] @user* — one player\n*!dash @user* — whole squad`, msg);
+    await sendText(sock, jid, `⚠️ Tag, reply to, or type the name of the manager you want to dash to.\nUsage:\n*!dash [playerID] @user* — one player\n*!dash @user* — whole squad`, msg);
     return;
   }
   if (targetJid === sender) {
