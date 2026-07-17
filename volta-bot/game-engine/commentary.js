@@ -253,8 +253,22 @@ function buildBurst(eventType, ctx = {}, elapsed = 0) {
   });
 }
 
-function atmosphereLine() {
-  const line = pick(notRecent(ATMOSPHERE, (l) => l));
+// Extra crowd/tension lines that only make sense deep into the match, so the
+// atmosphere aligns with the clock instead of feeling minute-agnostic.
+const LATE_ATMOSPHERE = [
+  '⏳ The clock is ticking down — every touch matters now!',
+  '😰 Nerves are FRAYED with time running out!',
+  '🔥 Squeaky-bum time — the crowd can barely watch!',
+  '🚨 Deep into the match — one moment could decide it all!',
+  '⚡ Legs are heavy but the drama is peaking!',
+  '😤 This is where matches are won and lost!',
+];
+
+// Draw a background atmosphere line. Late in the game (75'+) it may pull from a
+// clock-aware pool so the vibe matches how deep we are into the match.
+function atmosphereLine(minute = 0) {
+  const usePool = (minute >= 75 && Math.random() < 0.6) ? LATE_ATMOSPHERE : ATMOSPHERE;
+  const line = pick(notRecent(usePool, (l) => l));
   remember([line]);
   return line;
 }

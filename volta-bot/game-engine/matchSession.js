@@ -365,6 +365,25 @@ async function runPvP(session) {
 
 function clearPvpTimer(s) { if (s.timer) { clearTimeout(s.timer); s.timer = null; } }
 
+// Current football minute for the live session (0–90).
+function matchMinute(s) { return engine.toFootballMinute(s.timeElapsed || 0); }
+
+// Prefix a live commentary line with the football clock, e.g. "⏱️ 63' | ...".
+// Late in the game the clock turns red-hot to sell the drama.
+function stampMinute(text, minute) {
+  const clock = minute >= 80 ? `⏱️ ${minute}'🔥` : `⏱️ ${minute}'`;
+  return `${clock} | ${text}`;
+}
+
+// A short, minute-aware drama tag added to late-game moments so the commentary
+// aligns with how deep into the match we are.
+function dramaTag(minute) {
+  if (minute >= 90) return pick(['🚨 INTO STOPPAGE TIME!', '🚨 DEEP INTO ADDED TIME!', '⏳ These are the DYING SECONDS!']);
+  if (minute >= 85) return pick(['⏳ The clock is the enemy now!', '😰 Nerves are shredded — so late!', '🔥 Final push — every second counts!']);
+  if (minute >= 75) return pick(['⚡ Squeaky-bum time!', '😤 The closing stretch — tensions rising!', '⏳ Not long left on the clock!']);
+  return '';
+}
+
 // Send a match message to everyone involved. In a group that's just the group;
 // in a 1-on-1 it also reaches both managers' personal chats.
 function matchRecipients(s) {
@@ -417,16 +436,20 @@ async function presentChance(s) {
   s.phase = 'await';
 
   // Build-up commentary — several tense lines land BEFORE the choice appears.
+  // Nudge the clock forward a touch per beat so the minute stamps tick up
+  // naturally across the buildup instead of jumping only on the result.
   let bi = 0;
   for (const line of sit.build) {
-    await broadcast(s, situ.fillPlaceholders(line, ctx));
+    s.timeElapsed = Math.min((s.timeElapsed || 0) + engine.eventDuration('pass'), MATCH.TOTAL_SECONDS);
+    const bfm = matchMinute(s);
+    await broadcast(s, stampMinute(situ.fillPlaceholders(line, ctx), bfm));
     await sleep(MATCH.PVP_BUILDUP_DELAY_MS);
     // Mid-buildup possession loss: after the first beat, the defender may step
     // in and steal the ball before the attacking manager ever reacts (~once
     // per chance, so it doesn't compound across many build-up lines).
     if (!isDefend && bi === 0 && Math.random() < MATCH.PVP_INTERCEPT_PCT) {
       const iline = pick(INTERCEPT_LINES);
-      await broadcast(s, situ.fillPlaceholders(iline, ctx));
+      await broadcast(s, stampMinute(situ.fillPlaceholders(iline, ctx), matchMinute(s)));
       if (attackerSide === 'home') {
         s.homeMomentum = engine.updateMomentum(s.homeMomentum, 'MISS');
         s.awayMomentum = engine.updateMomentum(s.awayMomentum, 'BIG_SAVE');
@@ -454,7 +477,7 @@ async function presentChance(s) {
   // automatically after a short beat — the human just watches the buildup.
   if (s.isInteractiveAI && s.responder === 'away') {
     await broadcast(s,
-      `🤖 *${atkName}* size up the chance…\n` +
+      `⏱️ ${matchMinute(s)}' — 🤖 *${atkName}* size up the chance…\n` +
       `👉 Options: ${optText}\n` +
       `⏳ The AI is deciding…`);
     const choice = pickAiOption(sit.options);
@@ -463,18 +486,20 @@ async function presentChance(s) {
     return;
   }
 
+  const turnClock = matchMinute(s);
+  const turnDrama = dramaTag(turnClock) ? `\n${dramaTag(turnClock)}` : '';
   if (isDefend) {
     await broadcast(s,
-      `🛡️ *YOUR TURN — ${defName}!*\n` +
+      `⏱️ ${turnClock}' — 🛡️ *YOUR TURN — ${defName}!*\n` +
       `⚠️ ${atkName}'s *${ctx.player}* is bearing down — pick your defensive move!\n` +
       `👉 React: ${optText}\n` +
-      `⏳ You have *${(MATCH.PVP_FORFEIT_MS / 1000)}s* — don't stall!`);
+      `⏳ You have *${(MATCH.PVP_FORFEIT_MS / 1000)}s* — don't stall!${turnDrama}`);
   } else {
     await broadcast(s,
-      `⚽ *YOUR TURN — ${atkName}!*\n` +
+      `⏱️ ${turnClock}' — ⚽ *YOUR TURN — ${atkName}!*\n` +
       `👤 ${ctx.player} is live on the ball!\n` +
       `👉 React: ${optText}\n` +
-      `⏳ You have *${(MATCH.PVP_FORFEIT_MS / 1000)}s* — don't stall!`);
+      `⏳ You have *${(MATCH.PVP_FORFEIT_MS / 1000)}s* — don't stall!${turnDrama}`);
   }
 
   armForfeit(s, s.responder);
@@ -510,11 +535,11 @@ async function nextChance(s) {
     s.halftimeDone = true;
     s.phase = 'paused';
     await broadcast(s,
-      `⏸️ *HALF TIME!*\n${s.homeName} ${s.homeScore} – ${s.awayScore} ${s.awayName}\n` +
+      `⏱️ 45' — ⏸️ *HALF TIME!*\n${s.homeName} ${s.homeScore} – ${s.awayScore} ${s.awayName}\n` +
       `☕ Catch your breath… second half kicks off in *${MATCH.PVP_HALF_TIME_MS / 1000}s*! 🔁 *!sub [outId] [inId]* now!`);
     await sleep(MATCH.PVP_HALF_TIME_MS);
     s.phase = 'idle';
-    await broadcast(s, `🔥 *SECOND HALF KICKS OFF!* No mercy now! ⚔️`);
+    await broadcast(s, `⏱️ 46' — 🔥 *SECOND HALF KICKS OFF!* No mercy now! ⚔️`);
   }
 
   await presentChance(s);
@@ -614,7 +639,10 @@ async function resolveChance(s, sender, raw) {
   }
 
   const hype = isGoal ? `\n${comm.genZFlow('HYPE', { team: atkName })}` : '';
-  await broadcast(s, `${s.homeName} ${s.homeScore}–${s.awayScore} ${s.awayName}\n${line}${hype}`.trim());
+  // A late goal gets an extra drama beat so the commentary matches the clock.
+  const drama = isGoal ? (dramaTag(fm) ? `\n${dramaTag(fm)}` : '') : '';
+  const scoreboard = `⏱️ ${fm}'  ${s.homeName} ${s.homeScore}–${s.awayScore} ${s.awayName}`;
+  await broadcast(s, `${scoreboard}\n${line}${hype}${drama}`.trim());
 
   // Injury roll in interactive play.
   if (Math.random() < INJURY.CHANCE_PER_CHANCE) {
@@ -622,7 +650,7 @@ async function resolveChance(s, sender, raw) {
     const defPlayer = pick(defSquad.filter(p => p.role === 'outfield')) || null;
     const victim = Math.random() < 0.5 ? player : defPlayer;
     const inj = rollInjury(victim);
-    if (inj) await broadcast(s, `🚑 *INJURY!* ${Player.displayName(victim) || victim.name} is hurt — out for ~${inj.hours}h! 😣`);
+    if (inj) await broadcast(s, stampMinute(`🚑 *INJURY!* ${Player.displayName(victim) || victim.name} is hurt — out for ~${inj.hours}h! 😣`, fm));
   }
 
   s.phase = 'idle';
@@ -631,13 +659,15 @@ async function resolveChance(s, sender, raw) {
 }
 
 async function forfeitPvP(s, offenderId, winnerId) {
+  if (s._finished || s._forfeited) return; // don't forfeit a match that already ended
+  s._forfeited = true;
   clearPvpTimer(s);
   pvpChances.delete(s.matchId);
   const offName = offenderId === s.homeId ? s.homeName : s.awayName;
   const winName = winnerId === s.homeId ? s.homeName : s.awayName;
   if (winnerId === s.homeId) s.homeScore = Math.max(s.homeScore, s.awayScore + 1);
   else s.awayScore = Math.max(s.awayScore, s.homeScore + 1);
-  await broadcast(s, `🚩 *FORFEIT!* ${offName} didn't react in time — *${winName}* wins on walkover! 😤`);
+  await broadcast(s, stampMinute(`🚩 *FORFEIT!* ${offName} didn't react in time — *${winName}* wins on walkover! 😤`, matchMinute(s)));
   await finishPvP(s);
 }
 
@@ -655,8 +685,11 @@ async function forfeitPvPForUser(sender) {
 }
 
 async function finishPvP(s) {
+  if (s._finished) return; // guard against a double-finish (forfeit + expiring timer)
+  s._finished = true;
   clearPvpTimer(s);
   pvpChances.delete(s.matchId);
+  activeSessions.delete(s.matchId); // free both managers — was left stuck in a match
 
   const winnerId = s.homeScore > s.awayScore ? s.homeId : s.awayScore > s.homeScore ? s.awayId : null;
   const isDraw = s.homeScore === s.awayScore;
@@ -801,7 +834,7 @@ function simulateChunk(session, count) {
 
   for (let i = 0; i < count; i++) {
     if (Math.random() < 0.22 && lines.length) {
-      lines.push(`\n${comm.atmosphereLine()}`);
+      lines.push(`\n${comm.atmosphereLine(engine.toFootballMinute(session.timeElapsed || 0))}`);
     }
 
     const team   = decidePossession(session);
