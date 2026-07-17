@@ -352,8 +352,13 @@ function showWarn(msg){ $('warnMsg').innerHTML = msg; $('warn').classList.remove
 function hideWarn(){ $('warn').classList.add('hidden'); }
 $('warnX').onclick = hideWarn;
 
+// Extra headers on every request. 'ngrok-skip-browser-warning' bypasses the
+// ngrok free-tier interstitial HTML page that otherwise breaks fetch() with a
+// "Failed to fetch" / CORS error.
+const EXTRA_HEADERS = { 'ngrok-skip-browser-warning': 'true' };
 async function api(path, opts={}){
-  const res = await fetch(apiBase() + path, Object.assign({headers:{'Content-Type':'application/json'}}, opts));
+  const headers = Object.assign({'Content-Type':'application/json'}, EXTRA_HEADERS, opts.headers||{});
+  const res = await fetch(apiBase() + path, Object.assign({}, opts, {headers}));
   const data = await res.json().catch(()=>({}));
   if(!res.ok) throw new Error(data.error || 'request failed');
   return data;
@@ -362,7 +367,7 @@ async function api(path, opts={}){
 // Warn the manager if their running backend lacks the new web features.
 async function checkBackend(){
   try{
-    const r = await fetch(apiBase() + '/api/info');
+    const r = await fetch(apiBase() + '/api/info', {headers:EXTRA_HEADERS});
     if(!r.ok) throw new Error('no info');
     const d = await r.json();
     if((d.version||0) < 2) showWarn('Your web backend is outdated — restart <span class="mono">node web/server.js</span> to unlock Shop &amp; Games.');
@@ -972,7 +977,7 @@ $('settingsBtn').onclick = () => {
   };
   $('setTest').onclick = async () => {
     try {
-      const r = await fetch(apiBase() + '/api/info');
+      const r = await fetch(apiBase() + '/api/info', {headers:EXTRA_HEADERS});
       if (!r.ok) throw new Error('bad status');
       const d = await r.json();
       $('setRes').textContent = `Connected ✓ backend v${d.version}`;
@@ -1131,7 +1136,7 @@ function setHb(up){
   $('hbTxt').textContent = up ? 'live' : 'offline';
 }
 async function pingHeartbeat(){
-  try{ const r = await fetch(apiBase()+'/api/heartbeat'); if(!r.ok) throw 0; const d = await r.json(); setHb(true); return d; }
+  try{ const r = await fetch(apiBase()+'/api/heartbeat', {headers:EXTRA_HEADERS}); if(!r.ok) throw 0; const d = await r.json(); setHb(true); return d; }
   catch{ setHb(false); return null; }
 }
 function startHeartbeat(){
