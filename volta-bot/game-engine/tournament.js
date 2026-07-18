@@ -257,6 +257,7 @@ function autoSim(m) {
   m.winner = simulateWinner(a, b);
   m.simulated = true;
   checkComplete();
+  persist();
 }
 
 function checkComplete() {

@@ -63,7 +63,7 @@ async function cmdSquad({ sock, msg, jid, sender, user }) {
 💰 ${money(user.currency)}  🏆 MMR ${user.mmr} (${user.rank})  ⚔️ ${user.wins}W ${user.losses}L ${user.draws}D\n\n`;
 
   text += `*⚡ STARTING XI* (${xi.length}/${SQUAD.STARTING_XI_SIZE})\n`;
-  text += xi.length ? xi.map((p) => squadRow(p, '▶️')).join('\n') : '_empty — open a pack with !shop_';
+  text += xi.length ? xi.map((p) => squadRow(p, '▶️')).join('\n') : '_empty — open a pack with !shop';
 
   text += `\n\n*🪑 BENCH* (${bench.length}/${SQUAD.BENCH_SIZE})\n`;
   text += bench.length ? bench.map((p) => squadRow(p, '⏸️')).join('\n') : '_empty_';

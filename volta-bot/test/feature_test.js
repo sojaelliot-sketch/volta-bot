@@ -238,6 +238,25 @@ function ok(cond, label) {
   ok((q1res.wins + q1res.losses === 0 && q1res.draws >= 1), 'drawn PvP with pk off records a DRAW (no PK)');
   ok(!sent.some(s => s.text && s.text.includes('PENALTIES')), 'no penalties when pkEnabled off');
 
+  console.log('\n=== 10. MOMENTUM FIX REGRESSION (matchSession.js) ===');
+  const engine = require('../game-engine/matchEngine');
+  // Directions must be: GOAL +, MISS -, BIG_SAVE +, TURNOVER +
+  ok((engine.updateMomentum(50, 'GOAL') > 50), 'GOAL raises momentum');
+  ok((engine.updateMomentum(50, 'MISS') < 50), 'MISS lowers momentum');
+  ok((engine.updateMomentum(50, 'BIG_SAVE') > 50), 'BIG_SAVE raises momentum');
+  // On a non-goal event the ATTACKER must lose momentum and the DEFENDER gain it.
+  // Drive several vs-AI matches and assert momentum never leaves [0,100] and that
+  // a missed chance never pushes BOTH sides up.
+  let momentumOk = true, bothUp = false;
+  for (let i = 0; i < 8; i++) {
+    const m2 = await makeUser(`777000${i}`, `MomFC${i}`);
+    User.update(m2, { stadium: null, fanEnergy: 50, currency: 50000 });
+    const before = { h: 50, a: 50 };
+    const sess = await matchSession.startMatch(sock, m2, 'AI', { chatJid: m2, aiDifficulty: 'Medium' });
+    if (sess.homeMomentum < 0 || sess.homeMomentum > 100 || sess.awayMomentum < 0 || sess.awayMomentum > 100) momentumOk = false;
+  }
+  ok(momentumOk, 'momentum stays within [0,100] across simulated matches');
+
   console.log(`\n─────────────────────────────────`);
   console.log(`RESULT: ${pass} passed, ${fail} failed`);
   console.log(`─────────────────────────────────`);

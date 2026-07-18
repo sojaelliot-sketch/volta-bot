@@ -32,8 +32,12 @@ async function handle({ sock, msg, jid, sender, args, replyTo, mentioned }) {
     }
   }
 
-  // Fall back to a manager NAME typed as text (e.g. !dash John).
-  if (!targetJid) targetJid = resolveTarget(args, { replyTo, mentioned });
+  // Fall back to a manager NAME typed as text (e.g. !dash John). Strip the
+  // already-captured playerId so we don't look the player id up as a name.
+  if (!targetJid) {
+    const nameArgs = playerId ? args.filter(a => a !== playerId) : args;
+    targetJid = resolveTarget(nameArgs, { replyTo, mentioned });
+  }
 
   if (!targetJid) {
     await sendText(sock, jid, `⚠️ Tag, reply to, or type the name of the manager you want to dash to.\nUsage:\n*!dash [playerID] @user* — one player\n*!dash @user* — whole squad`, msg);

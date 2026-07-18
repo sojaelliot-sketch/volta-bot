@@ -108,8 +108,8 @@ Example: *!register Elliot*
     const role = p.role === 'goalkeeper' ? '🧤 GK' : '⚽ OF';
     const s = p.stats;
     const statLine = p.role === 'goalkeeper'
-      ? `REF ${s.reflex} POS ${s.positioning} ANT ${s.anticipation} STR ${s.strength} COM ${s.composer}`
-      : `PAC ${s.pace} SKL ${s.skill} SHO ${s.shooting} STA ${s.stamina} COM ${s.composer}`;
+      ? `REF ${s.reflex} POS ${s.positioning} ANT ${s.anticipation} STR ${s.strength} COM ${s.composure}`
+      : `PAC ${s.pace} SKL ${s.skill} SHO ${s.shooting} STA ${s.stamina} COM ${s.composure}`;
     reveal += `${emoji} *${Player.displayName(p)}* — ${role} · ${p.rarity} · Age ${p.age}\n`;
     reveal += `   ${statLine}\n`;
     reveal += `   💰 ${money(Player.marketValue(p))} · ❤️ ${bar(p.condition)} · 🆔 \`${p.id.slice(0, 6)}\`\n\n`;

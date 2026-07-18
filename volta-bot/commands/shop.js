@@ -81,8 +81,8 @@ async function cmdPack({ sock, msg, jid, sender, args, user }) {
     const role = p.role === 'goalkeeper' ? '🧤 GK' : '⚽ OF';
     const s = p.stats;
     const statLine = p.role === 'goalkeeper'
-      ? `REF ${s.reflex} POS ${s.positioning} ANT ${s.anticipation} STR ${s.strength} COM ${s.composer}`
-      : `PAC ${s.pace} SKL ${s.skill} SHO ${s.shooting} STA ${s.stamina} COM ${s.composer}`;
+      ? `REF ${s.reflex} POS ${s.positioning} ANT ${s.anticipation} STR ${s.strength} COM ${s.composure}`
+      : `PAC ${s.pace} SKL ${s.skill} SHO ${s.shooting} STA ${s.stamina} COM ${s.composure}`;
     reveal += `${emoji} *${Player.displayName(p)}*\n`;
     reveal += `   ${p.rarity} · ${role} · Age ${p.age}\n`;
     reveal += `   ${statLine}\n`;
