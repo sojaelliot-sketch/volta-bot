@@ -469,7 +469,13 @@ function matchRecipients(s) {
 }
 async function broadcast(s, text) {
   for (const r of matchRecipients(s)) {
-    try { await sendText(s.sock, r, text); } catch {}
+    try {
+      if (typeof text === 'object' && text !== null) {
+        await s.sock.sendMessage(r, text, s.quoted ? { quoted: s.quoted } : undefined);
+      } else {
+        await sendText(s.sock, r, text);
+      }
+    } catch {}
   }
 }
 
@@ -1279,4 +1285,4 @@ function clearAllPvP() {
   return { cleared, healed };
 }
 
-module.exports = { startMatch, isChatLocked, getActivePvPForUser, getActiveMatchForUser, applySub, getPvpSessionFor, resolveChance, clearAllPvP, forfeitPvPForUser };
+module.exports = { startMatch, isChatLocked, getActivePvPForUser, getActiveMatchForUser, applySub, getPvpSessionFor, resolveChance, clearAllPvP, forfeitPvPForUser, finishPvP };
