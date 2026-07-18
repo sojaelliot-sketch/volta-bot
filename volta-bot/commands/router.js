@@ -118,6 +118,10 @@ const handlers = {
   demote: () => require('./mod'),
   kick: () => require('./mod'),
   mods: () => require('./mod'),
+  stadium: () => require('./stadium'),
+  buystadium: () => require('./stadium'),
+  sellstadium: () => require('./stadium'),
+  pk: () => require('./stadium'),
 };
 
 const PUBLIC_COMMANDS = new Set(['start', 'register', 'help', 'menu', 'top10', 'leaderboard', 'lb', 'invite']);

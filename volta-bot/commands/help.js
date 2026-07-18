@@ -18,12 +18,13 @@ const MENU = `⚽ *VOLTA* — ${BRAND}
    • Build your squad, open packs & train players
    • Play live Penalty shootouts + coinflip / slot / high-low
 
-*⚔️ MATCHES*
+ *⚔️ MATCHES*
 !play — 🆚 vs Medium AI
 !play easy / hard — 🟢 / 🔴
 !match [easy|medium|hard] — 🔒 Private AI match (locks the chat)
 !challenge @user — 🥊 PvP duel
 !accept — ✅ Accept
+!pk on|off — ⚽ Toggle penalties on a drawn normal PvP (tournament ties always go to PK)
 !forfeit — 🚩 Forfeit your PvP match (owner can force any)
 !sub [outId] [inId] — 🔁 Sub (during PvP pause)
 
@@ -70,6 +71,11 @@ const MENU = `⚽ *VOLTA* — ${BRAND}
 !academy — 🏫 View your youth prospects
 !scout — 🔍 Discover a new youth talent (costs Metaworks)
 !promote [id] — ⬆️ Promote a youth prospect into your squad
+
+ *🏟️ STADIUMS* (own one for training ×, home bonuses & weather roof)
+!stadium — 🏟️ View your stadium (card) + fan energy + upkeep
+!buystadium [key] — 💳 Buy/upgrade (sunday_pitch → local_ground → city_arena → volta_colosseum → legends_dome)
+!sellstadium — 💸 Sell for half (back to Sunday Pitch)
 
  *🛡️ STAFF / OWNER*
 !mods — 📋 Staff list

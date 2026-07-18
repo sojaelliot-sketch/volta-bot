@@ -7,6 +7,7 @@ const User = require('../models/User');
 const Player = require('../models/Player');
 const { money } = require('../utils/formatter');
 const { sendText } = require('../utils/messaging');
+const logger = require('../utils/logger');
 const { BRAND } = require('../config/constants');
 const { resolveTarget } = require('./router');
 const { formatBadges } = require('../utils/badges');
@@ -66,6 +67,10 @@ async function handle({ sock, msg, jid, sender, cmd, args, replyTo, mentioned })
       return;
     }
     await sendText(sock, jid, profileBlock(u) + `\n${BRAND}`, msg);
+    try {
+      const buf = require('../utils/profileRenderer').renderProfileCard(u);
+      await sock.sendMessage(jid, { image: buf, caption: `🪪 *${u.name}* — VOLTA manager profile` }, { quoted: msg });
+    } catch (err) { logger.error({ err }, 'profile card render failed'); }
     return;
   }
 
@@ -77,6 +82,10 @@ async function handle({ sock, msg, jid, sender, cmd, args, replyTo, mentioned })
       return;
     }
     await sendText(sock, jid, profileBlock(u) + `\n${BRAND}`, msg);
+    try {
+      const buf = require('../utils/profileRenderer').renderProfileCard(u);
+      await sock.sendMessage(jid, { image: buf, caption: `🪪 *${u.name}* — VOLTA manager profile` }, { quoted: msg });
+    } catch (err) { logger.error({ err }, 'profile card render failed'); }
     return;
   }
 }

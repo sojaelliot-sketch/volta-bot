@@ -42,6 +42,36 @@ module.exports = {
     PVP_CATCH_PCT: 0.40,          // of non-goal shots, share where the keeper CATCHES (clean claim) vs blocks
     PVP_DEFEND_WEIGHT: 0.5,       // how much a defensive option's gw matters vs attacker strength
     PVP_AI_REACT_MS: 2000,        // delay before the AI auto-picks in an interactive vs-AI match
+
+    // Stadium: weather + home advantage hooks
+    WEATHER: {
+      RAIN_PACE_PENALTY: 8,         // flat deduction applied to pace under rain (all players)
+      RAIN_CONTROL_PENALTY: 6,      // deduction to control-ish stats (composure/skill) under rain
+    },
+  },
+
+  // ─── STADIUM ────────────────────────────────────────────────────────────
+  // Owning a stadium gives training multipliers, home-match bonuses (scaled by
+  // fan energy 0-100) and, at tier 3+, a retractable roof that blocks rain.
+  // Key names MUST match utils/stadiumRenderer.js STADIUM_DATA.
+  STADIUM: {
+    TIERS: {
+      sunday_pitch:   { name: 'Sunday Pitch',    tier: 0, cost: 0,     upkeep: 0,   trainingMult: 1.0,  momentumBonus: 0,    conditionRegen: 0,   currencyBonus: 0,    weatherImmune: false },
+      local_ground:   { name: 'Local Ground',    tier: 1, cost: 800,   upkeep: 40,  trainingMult: 1.15, momentumBonus: 0.03, conditionRegen: 0.05, currencyBonus: 0.05, weatherImmune: false },
+      city_arena:     { name: 'City Arena',      tier: 2, cost: 2500,  upkeep: 110, trainingMult: 1.35, momentumBonus: 0.06, conditionRegen: 0.10, currencyBonus: 0.10, weatherImmune: false },
+      volta_colosseum:{ name: 'VOLTA Colosseum', tier: 3, cost: 6000,  upkeep: 260, trainingMult: 1.65, momentumBonus: 0.10, conditionRegen: 0.15, currencyBonus: 0.20, weatherImmune: true },
+      legends_dome:   { name: "Legends' Dome",   tier: 4, cost: 15000, upkeep: 550, trainingMult: 2.0,  momentumBonus: 0.15, conditionRegen: 0.20, currencyBonus: 0.30, weatherImmune: true },
+    },
+    DEFAULT_KEY: 'sunday_pitch',
+    UPKEEP_GRACE_DAYS: 2,           // bonuses go dormant (not lost) if unpaid this long
+    ENERGY_MAX: 100,
+    ENERGY_WIN: 12,                 // home win
+    ENERGY_DRAW: 3,                 // home draw
+    ENERGY_LOSS: -10,               // home loss
+    ENERGY_DECAY_PER_DAY: 4,        // inactivity decay
+    ROOF_BROKEN_BELOW: 40,          // roof "broken" (no immunity) below this energy
+    FULL_ENERGY: 80,                // bonuses only work at/above this (scale linearly below)
+    LOW_ENERGY: 40,                 // below this, no bonuses at all
   },
 
 
