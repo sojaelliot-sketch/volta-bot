@@ -220,7 +220,10 @@ async function handle({ sock, msg, jid, sender, cmd, args, replyTo, mentioned })
     await sendText(sock, jid,
       `🥊 *MATCH ON!*\n👤 ${chUser.name} vs 🆚 ${myUser.name}\n⚡ Chances are coming — when it's YOUR turn, react with *!a / !b / !c* (the options shown in the chance)! 🔥`, msg);
 
-    await startMatch(sock, challenger, sender, { chatJid: jid, isPvP: true, msg });
+    await startMatch(sock, challenger, sender, {
+      chatJid: jid, isPvP: true, msg,
+      pkEnabled: chUser.pkEnabled === true || myUser.pkEnabled === true,
+    });
     return;
   }
 
@@ -259,7 +262,10 @@ async function handle({ sock, msg, jid, sender, cmd, args, replyTo, mentioned })
     lastPlayAt.set(opponent, Date.now());
     await sendText(sock, jid,
       `🏆 *TOURNAMENT TIE!*\n👤 ${myUser.name} vs 🆚 ${oppName}\n⚡ Chances are coming — when it's YOUR turn, react with *!a / !b / !c*! 🔥\n(Win to advance in the bracket.)`, msg, [opponent]);
-    await startMatch(sock, sender, opponent, { chatJid: jid, isPvP: true, msg });
+    await startMatch(sock, sender, opponent, {
+      chatJid: jid, isPvP: true, msg,
+      isTournament: true, // tournament ties go to penalties on a draw
+    });
     return;
   }
 }

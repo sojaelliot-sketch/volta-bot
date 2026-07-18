@@ -30,7 +30,7 @@ const ACTION_CONFIG = {
   skillmove: { primary: 'skill',    pw: 0.8, secondary: 'pace',      sw: 0.2 },
 };
 
-function calcActionPower(player, action, teamMomentum, footballMinute) {
+function calcActionPower(player, action, teamMomentum, footballMinute, weather = null, immune = false) {
   const cfg  = ACTION_CONFIG[action] || ACTION_CONFIG.pass;
   const cond = player.condition || 100;
   const s    = player.stats || {};
@@ -45,7 +45,18 @@ function calcActionPower(player, action, teamMomentum, footballMinute) {
   const lateBonus  = lateGamePenalty(footballMinute, cond);
   const variance   = withVariance(0, 8);
 
-  return Math.round(base + formBonus + chemBonus + momBonus + lateBonus + variance);
+  // CATCH #3 — Weather immunity: a home team with a retractable roof ignores
+  // rain. Otherwise rain reduces pace and ball-control stats for everyone.
+  let weatherPenalty = 0;
+  if (weather === 'raining' && !immune) {
+    const M = require('../config/constants').MATCH.WEATHER;
+    const isPace   = cfg.primary === 'pace'   || cfg.secondary === 'pace';
+    const isCtrl   = cfg.primary === 'composure' || cfg.secondary === 'composure' || cfg.primary === 'skill' || cfg.secondary === 'skill';
+    if (isPace) weatherPenalty -= M.RAIN_PACE_PENALTY;
+    if (isCtrl) weatherPenalty -= M.RAIN_CONTROL_PENALTY;
+  }
+
+  return Math.round(base + formBonus + chemBonus + momBonus + lateBonus + variance + weatherPenalty);
 }
 
 function calcDefensePower(defenders, gk, oppMomentum, footballMinute) {

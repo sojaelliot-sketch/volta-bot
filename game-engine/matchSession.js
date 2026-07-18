@@ -1,4 +1,4 @@
-const { v4: uuid } = require('uuid');
+﻿const { v4: uuid } = require('uuid');
 const User    = require('../models/User');
 const Player  = require('../models/Player');
 const engine  = require('./matchEngine');
@@ -263,7 +263,25 @@ async function startMatch(sock, homeId, awayId = 'AI', options = {}) {
     goalScorers: [],
     phase: 'running',
     lastMsg: options.msg || null,
+    isTournament: !!options.isTournament,
+    pkEnabled: !!options.pkEnabled || (homeUser.pkEnabled === true),
+    // Weather: ~25% of matches are rainy. Home fan-energy roof can block it.
+    weather: Math.random() < 0.25 ? 'raining' : 'clear',
+    homeWeatherImmune: (() => {
+      try { return require('../utils/stadium').blocksWeather(homeUser); } catch { return false; }
+    })(),
   };
+
+  // CATCH #2 — Home fan-energy bonuses. Compute once and store on the session.
+  let homeBonus = { momentum: 0, conditionRegen: 0, currencyMult: 1, active: false, energy: 100, tier: 0 };
+  try {
+    const stadiumUtil = require('../utils/stadium');
+    homeBonus = stadiumUtil.homeBonuses(homeUser);
+    if (homeBonus.momentum) session.homeMomentum = Math.min(100, session.homeMomentum + homeBonus.momentum);
+  } catch (err) {
+    logger.error({ err }, 'Stadium home bonus failed');
+  }
+  session.homeBonus = homeBonus;
 
   // Interactive matches: PvP (two humans) or vs-AI (human home + AI away that
   // auto-responds on its turn). Both use the live !a/!b/!c chance loop.
@@ -382,6 +400,65 @@ function dramaTag(minute) {
   if (minute >= 85) return pick(['⏳ The clock is the enemy now!', '😰 Nerves are shredded — so late!', '🔥 Final push — every second counts!']);
   if (minute >= 75) return pick(['⚡ Squeaky-bum time!', '😤 The closing stretch — tensions rising!', '⏳ Not long left on the clock!']);
   return '';
+}
+
+// ── PENALTY SHOOTOUT DECIDER ──────────────────────────────────────────────────
+// Used when a match ends drawn but penalties are required (tournament ties, or a
+// normal PvP where either side has !pk on). Returns the winning jid, or null if
+// it somehow stays tied (shouldn't — sudden death resolves it).
+function penaltyPowerFor(ownerId) {
+  const owned = Player.getSquadPlayers(ownerId);
+  const out = owned.filter((p) => p.role === 'outfield').sort((a, b) => Player.totalStats(b) - Player.totalStats(a))[0];
+  const gk  = owned.filter((p) => p.role === 'goalkeeper').sort((a, b) => Player.totalStats(b) - Player.totalStats(a))[0];
+  return {
+    shoot: out ? (out.stats.shooting || 60) : 60,
+    reflex: gk ? (gk.stats.reflex || 60) : 60,
+  };
+}
+
+function simulateShootout(shoot, reflex) {
+  let goals = 0;
+  for (let i = 0; i < 5; i++) {
+    const edge = (shoot - reflex) / 40;
+    const p = Math.min(0.95, Math.max(0.1, 0.5 + edge * 0.15 + (Math.random() - 0.5) * 0.3));
+    if (Math.random() < p) goals++;
+  }
+  return goals;
+}
+
+async function decideByPenalties(homeId, awayId) {
+  let hs = simulateShootout(penaltyPowerFor(homeId).shoot, penaltyPowerFor(awayId).reflex);
+  let as = simulateShootout(penaltyPowerFor(awayId).shoot, penaltyPowerFor(homeId).reflex);
+  let round = 5;
+  while (hs === as) {
+    round++;
+    const hGoal = Math.random() < Math.min(0.95, Math.max(0.1, 0.5 + (penaltyPowerFor(homeId).shoot - penaltyPowerFor(awayId).reflex) / 40 * 0.15));
+    const aGoal = Math.random() < Math.min(0.95, Math.max(0.1, 0.5 + (penaltyPowerFor(awayId).shoot - penaltyPowerFor(homeId).reflex) / 40 * 0.15));
+    if (hGoal) hs++;
+    if (aGoal) as++;
+  }
+  const winnerId = hs > as ? homeId : awayId;
+  return { winnerId, homePk: hs, awayPk: as };
+}
+
+// Render + send the full-time scoreboard image after a match.
+async function sendMatchImage(s, { homeScore, awayScore, goalScorers = [], mvp = null, isTournament = false }) {
+  try {
+    const { renderFullTimeCard } = require('../utils/matchImageRenderer');
+    const homeScorers = goalScorers.filter(g => g.team === 'home').map(g => ({ name: g.player, minute: g.minute }));
+    const awayScorers = goalScorers.filter(g => g.team === 'away').map(g => ({ name: g.player, minute: g.minute }));
+    const motm = mvp ? { name: mvp.name, team: mvp.team === 'home' ? s.homeName : s.awayName } : null;
+    const buf = renderFullTimeCard({
+      homeTeam: s.homeName, awayTeam: s.awayName,
+      homeScore, awayScore, homeScorers, awayScorers, motm,
+      timeOfDay: Math.random() < 0.5 ? 'day' : 'night',
+      weather: s.weather === 'raining' ? 'raining' : 'sunny',
+    });
+    const caption = isTournament ? '🏆 Tournament tie' : '⚔️ Match result';
+    await broadcast(s, { image: buf, caption });
+  } catch (err) {
+    logger.error({ err }, 'match image render failed');
+  }
 }
 
 // Send a match message to everyone involved. In a group that's just the group;
@@ -691,8 +768,17 @@ async function finishPvP(s) {
   pvpChances.delete(s.matchId);
   activeSessions.delete(s.matchId); // free both managers — was left stuck in a match
 
-  const winnerId = s.homeScore > s.awayScore ? s.homeId : s.awayScore > s.homeScore ? s.awayId : null;
-  const isDraw = s.homeScore === s.awayScore;
+  const pkApplies = (s.pkEnabled || s.isTournament) && !s.isAI && s.awayId && s.awayId !== 'AI';
+  let pkResult = null;
+  if (s.homeScore === s.awayScore && pkApplies) {
+    pkResult = await decideByPenalties(s.homeId, s.awayId);
+    await broadcast(s,
+      `⚽ *DRAW* — going to PENALTIES! 🔥\n${s.homeName} ${pkResult.homePk}–${pkResult.awayPk} ${s.awayName}\n` +
+      `🏆 *${pkResult.winnerId === s.homeId ? s.homeName : s.awayName}* win on penalties!`);
+  }
+
+  const isDraw = !pkResult && s.homeScore === s.awayScore;
+  const winnerId = !pkResult ? null : pkResult.winnerId;
   const homeWon = winnerId === s.homeId;
 
   const homeReward = homeWon ? ECONOMY.WIN_REWARD : isDraw ? ECONOMY.DRAW_REWARD : ECONOMY.LOSS_REWARD;
@@ -774,6 +860,9 @@ async function finishPvP(s) {
   report += `${resultTxt}\n━━━━━━━━━━━━━━━━━━━━━━━\n${BRAND}`;
 
   await broadcast(s, report);
+
+  // Full-time scoreboard image (interactive PvP).
+  await sendMatchImage(s, { homeScore: s.homeScore, awayScore: s.awayScore, goalScorers: s.goalScorers || [], mvp, isTournament: s.isTournament });
 
   // ── persist a match record for the web-app history view ──
   try {
@@ -857,7 +946,7 @@ function simulateChunk(session, count) {
     const myMom     = isHome ? session.homeMomentum : session.awayMomentum;
     const oppMom    = isHome ? session.awayMomentum : session.homeMomentum;
 
-    const ap = engine.calcActionPower(attacker, action, myMom, fm);
+    const ap = engine.calcActionPower(attacker, action, myMom, fm, session.weather, isHome && session.homeWeatherImmune);
 
     let eventType;
     let isGoal = false;
@@ -918,8 +1007,22 @@ function simulateChunk(session, count) {
 async function endMatch(session) {
   const { sock, chatJid, awayId, isAI, homeName, awayName, homeScore, awayScore, goalScorers, homeId } = session;
 
-  const winnerId = homeScore > awayScore ? homeId : awayScore > homeScore ? awayId : null;
-  const isDraw   = homeScore === awayScore;
+  const pkApplies = (session.pkEnabled || session.isTournament) && !isAI && awayId && awayId !== 'AI';
+  let pkResult = null;
+  if (homeScore === awayScore && pkApplies) {
+    pkResult = await decideByPenalties(homeId, awayId);
+    await sendText(sock, chatJid,
+      `⚽ *DRAW* — going to PENALTIES! 🔥\n${homeName} ${pkResult.homePk}–${pkResult.awayPk} ${awayName}\n` +
+      `🏆 *${pkResult.winnerId === homeId ? homeName : awayName}* win on penalties!`, msg);
+    if (awayId) await sendText(sock, awayId,
+      `⚽ *DRAW* — PENALTIES! 🔥\n${awayName} ${pkResult.awayPk}–${pkResult.homePk} ${homeName}\n` +
+      `🏆 *${pkResult.winnerId === awayId ? awayName : homeName}* win on penalties!`);
+  }
+
+  const winnerId = homeScore > awayScore ? homeId
+    : awayScore > homeScore ? awayId
+    : (pkResult ? pkResult.winnerId : null);
+  const isDraw   = !winnerId;
   const homeWon  = winnerId === homeId;
 
   // ── match timeline: every goal stamped with its football minute ──
@@ -929,7 +1032,10 @@ async function endMatch(session) {
     .map(g => `⚽ ${g.minute}'  ${teamNameOf(g.team)} — ${g.player}`)
     .join('\n');
 
-  const homeReward = homeWon ? ECONOMY.WIN_REWARD : isDraw ? ECONOMY.DRAW_REWARD : ECONOMY.LOSS_REWARD;
+  const homeRewardRaw = homeWon ? ECONOMY.WIN_REWARD : isDraw ? ECONOMY.DRAW_REWARD : ECONOMY.LOSS_REWARD;
+  // CATCH #2 — home fan-energy currency bonus (only when active).
+  const homeBonus = session.homeBonus || { currencyMult: 1, active: false };
+  const homeReward = Math.round(homeRewardRaw * (homeBonus.active ? homeBonus.currencyMult : 1));
   const scale = mmrScale(session.aiDifficulty);
   const mmrDelta   = Math.round((homeWon ? MMR.WIN : isDraw ? MMR.DRAW : MMR.LOSS) * scale);
 
@@ -980,6 +1086,26 @@ async function endMatch(session) {
 
   const updatedUser = User.getByWhatsappId(homeId);
   const newRank = calcRank(updatedUser.mmr);
+
+  // CATCH #2 — post-match stadium effects for the HOME team.
+  if (homeBonus.active) {
+    try {
+      const stadiumUtil = require('../utils/stadium');
+      const dir = homeWon ? 'win' : isDraw ? 'draw' : 'loss';
+      stadiumUtil.adjustFanEnergy(updatedUser, dir);
+      if (homeBonus.conditionRegen > 0) {
+        for (const p of (session.homeSquad || [])) {
+          if (!p.id) continue;
+          const cur = Player.getById(p.id);
+          if (!cur) continue;
+          const cond = Math.min(100, (cur.condition || 100) + Math.round(homeBonus.conditionRegen * 100));
+          if (cond !== (cur.condition || 100)) Player.update(p.id, { condition: cond });
+        }
+      }
+    } catch (err) {
+      logger.error({ err }, 'Stadium post-match bonus failed');
+    }
+  }
   const rewards = [
     `🏁 *${homeName} ${homeScore}–${awayScore} ${awayName}*`,
     timeline ? `📋 *MATCH LOG*\n${timeline}` : `📋 *MATCH LOG*\nNo goals — a cagey ${homeScore}–${awayScore} draw.`,
@@ -993,6 +1119,11 @@ async function endMatch(session) {
     const mvp = Player.getById(homeScorer.id);
     rewards.push(`⭐ MVP: ${mvp ? Player.displayName(mvp) : homeScorer.player} (+${ECONOMY.MVP_BONUS})`);
   }
+  if (homeBonus.active) {
+    const st = require('../utils/stadium');
+    const key = st.resolveKey(updatedUser);
+    rewards.push(`🏟️ *${st.tierOf(key).name}* home bonus ×${homeBonus.currencyMult.toFixed(2)} (fan energy ${homeBonus.energy})`);
+  }
   rewards.push(`━━━━━━━━━━━━━━━━━━━━━━━━`);
   rewards.push(`*!play* to run it back.`);
 
@@ -1001,6 +1132,9 @@ async function endMatch(session) {
     rewards.push(`🏅 *RANK UP!* You're *${newRank}* now! 🚀`);
   }
   await sendText(sock, chatJid, rewards.join('\n'));
+
+  // Full-time scoreboard image.
+  await sendMatchImage(session, { homeScore, awayScore, goalScorers, mvp, isTournament: session.isTournament });
 
   // ── badges / achievements (home side) ──
   try {

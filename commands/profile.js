@@ -7,7 +7,10 @@ const User = require('../models/User');
 const Player = require('../models/Player');
 const { money } = require('../utils/formatter');
 const { sendText } = require('../utils/messaging');
+const logger = require('../utils/logger');
 const { BRAND } = require('../config/constants');
+const { resolveTarget } = require('./router');
+const { formatBadges } = require('../utils/badges');
 
 function roleLabel(role) {
   if (role === 'officer') return '👮 Officer';
@@ -20,14 +23,17 @@ function profileBlock(u) {
   const ovr = owned.length
     ? owned.reduce((s, p) => s + Player.totalStats(p), 0)
     : 0;
+  const badges = formatBadges(u);
   return (
     `👤 *${u.name}*\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `💰 ${money(u.currency)}  🏆 MMR ${u.mmr} (${u.rank})\n` +
     `⚔️ ${u.wins}W ${u.losses}L ${u.draws}D  ·  ${User.winRate(u)}% win rate\n` +
     `⚽ ${u.totalGoals || 0} career goals  🏆 ${u.tournamentWins || 0} tournament wins\n` +
+    `🔥 Win streak: ${u.winStreak || 0}\n` +
     `🧢 ${owned.length} players  ·  Squad OVR ${ovr}\n` +
     `👥 Role: ${roleLabel(u.role)}\n` +
+    (badges ? `━━━━━━━━━━━━━━━━━━━━━━━\n${badges}\n` : '') +
     `━━━━━━━━━━━━━━━━━━━━━━━`
   );
 }
@@ -52,13 +58,19 @@ async function handle({ sock, msg, jid, sender, cmd, args, replyTo, mentioned })
     else if (args[0] && args[0].includes('@')) target = args[0];
     else if (replyTo) target = replyTo;
     else if (mentioned) target = mentioned;
+    // Also support a manager NAME typed as text (e.g. !info Oasis FC).
+    if (!target) target = resolveTarget(args, { replyTo, mentioned });
 
     const u = target ? User.getByWhatsappId(target) : null;
     if (!u || !u.registered) {
-      await sendText(sock, jid, `❌ No registered manager found for that target.`, msg);
+      await sendText(sock, jid, `❌ No registered manager found for that target. Try replying to them, @mentioning, or typing their name.`, msg);
       return;
     }
     await sendText(sock, jid, profileBlock(u) + `\n${BRAND}`, msg);
+    try {
+      const buf = require('../utils/profileRenderer').renderProfileCard(u);
+      await sock.sendMessage(jid, { image: buf, caption: `🪪 *${u.name}* — VOLTA manager profile` }, { quoted: msg });
+    } catch (err) { logger.error({ err }, 'profile card render failed'); }
     return;
   }
 
@@ -70,6 +82,10 @@ async function handle({ sock, msg, jid, sender, cmd, args, replyTo, mentioned })
       return;
     }
     await sendText(sock, jid, profileBlock(u) + `\n${BRAND}`, msg);
+    try {
+      const buf = require('../utils/profileRenderer').renderProfileCard(u);
+      await sock.sendMessage(jid, { image: buf, caption: `🪪 *${u.name}* — VOLTA manager profile` }, { quoted: msg });
+    } catch (err) { logger.error({ err }, 'profile card render failed'); }
     return;
   }
 }

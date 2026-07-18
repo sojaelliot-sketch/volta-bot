@@ -26,6 +26,11 @@ function newUserDoc(whatsappId, name) {
     losses: 0,
     draws: 0,
     totalGoals: 0,
+    winStreak: 0,           // current consecutive-win counter (for badges)
+    tournamentWins: 0,
+
+    // Collectible badges/achievements — array of badge KEYS (see BADGES const).
+    badges: [],
 
     // Daily
     lastDaily: null,
@@ -48,7 +53,17 @@ function newUserDoc(whatsappId, name) {
     // Moderation
     role: 'user',          // user | moderator | officer
     warnings: 0,
-    bannedUntil: null,     // ISO string or null
+    bannedUntil: null,      // ISO string or null
+
+    // Stadium ownership (catch system). key is one of STADIUM.TIERS, or omitted
+    // for the default Sunday Pitch. fanEnergy (0-100) gates home bonuses.
+    stadium: null,          // e.g. 'volta_colosseum' or null = Sunday Pitch
+    fanEnergy: 100,         // 0-100, decays when inactive
+    upkeepLastPaid: null,   // ISO date of last weekly upkeep payment
+
+    // Normal-match penalty preference: if true, a drawn normal PvP/!match goes
+    // to a penalty shootout instead of a draw result.
+    pkEnabled: false,
 
     createdAt: now,
     updatedAt: now,

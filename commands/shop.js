@@ -5,6 +5,7 @@ const { PACKS, TRAINING, SHOP: SHOP_CFG, RARITY } = require('../config/constants
 const { money, bar } = require('../utils/formatter');
 const { sendText, typing } = require('../utils/messaging');
 const { randInt, pick } = require('../utils/random');
+const stadium = require('../utils/stadium');
 
 async function handle({ sock, msg, jid, sender, cmd, args, user }) {
   if (cmd === 'shop') return cmdShop({ sock, msg, jid, user });
@@ -104,6 +105,15 @@ and here's a FREE Starter Pack on us for the hype! 🎁 (${bonus.length} players
   }
 
   await sendText(sock, jid, reveal, msg);
+
+  // ── badge: First Legendary Pull ──
+  if (legendaryPulled) {
+    try {
+      require('../utils/badges').award(sender, 'first_legendary', { sock, jid, msg });
+    } catch { /* non-fatal */ }
+  }
+  // High Roller / other currency-milestone badges may have flipped from rewards.
+  try { require('../utils/badges').evaluateMilestones(sender, { sock, jid, msg }); } catch {}
 }
 
 async function cmdBoost({ sock, msg, jid, sender, args, user }) {
@@ -281,7 +291,10 @@ async function cmdTrain({ sock, msg, jid, sender, args, user }) {
     }
   }
 
-  const newVal = Math.min(currentVal + gain, TRAINING.STAT_CAP);
+  // CATCH #1 (stadium): training at your own ground multiplies stat gains.
+  const boosted = stadium.applyTrainingMultiplier(user, gain);
+
+  const newVal = Math.min(currentVal + boosted, TRAINING.STAT_CAP);
   if (newVal !== currentVal) {
     Player.update(player.id, {
       stats: { ...player.stats, [stat]: newVal },
@@ -291,13 +304,17 @@ async function cmdTrain({ sock, msg, jid, sender, args, user }) {
   User.update(sender, { currency: (user.currency || 0) - cost });
 
   const statLabel = stat.toUpperCase();
-  const gainDisplay = gain > 0 ? `+${gain}` : '—';
+  const gainDisplay = boosted > 0 ? `+${boosted}` : '—';
+
+  const stadiumLine = !stadium.isDefault(user)
+    ? `\n🏟️ ${stadium.tierOf(stadium.resolveKey(user)).name} training boost ×${stadium.trainingMultiplier(user)}`
+    : '';
 
   await sendText(sock, jid, `🏋️ *TRAINING ${isElite ? 'ELITE' : 'SESSION'}*
 ━━━━━━━━━━━━━━━━━━━━━━━
 🧑‍🏫 *${Player.displayName(player)}*
 📊 Stat: ${statLabel} ${currentVal} → ${newVal} (${gainDisplay})
-${outcome}
+${outcome}${stadiumLine || ''}
 💰 Cost: -${money(cost)}
 ━━━━━━━━━━━━━━━━━━━━━━━`, msg);
 }
