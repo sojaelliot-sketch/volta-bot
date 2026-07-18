@@ -980,12 +980,13 @@ function simulateChunk(session, count) {
 
     const momEvent = isGoal ? 'GOAL' : eventType === 'save' ? 'BIG_SAVE' : eventType === 'tackled' ? 'TURNOVER' : null;
     if (momEvent) {
+      const attackerEvent = isGoal ? 'GOAL' : 'MISS';
       if (isHome) {
-        session.homeMomentum = engine.updateMomentum(session.homeMomentum, momEvent);
-        session.awayMomentum = engine.updateMomentum(session.awayMomentum, isGoal ? 'MISS' : 'GOAL');
-      } else {
+        session.homeMomentum = engine.updateMomentum(session.homeMomentum, attackerEvent);
         session.awayMomentum = engine.updateMomentum(session.awayMomentum, momEvent);
-        session.homeMomentum = engine.updateMomentum(session.homeMomentum, isGoal ? 'MISS' : 'GOAL');
+      } else {
+        session.awayMomentum = engine.updateMomentum(session.awayMomentum, attackerEvent);
+        session.homeMomentum = engine.updateMomentum(session.homeMomentum, momEvent);
       }
     }
 
@@ -1019,7 +1020,7 @@ async function endMatch(session) {
     pkResult = await decideByPenalties(homeId, awayId);
     await sendText(sock, chatJid,
       `⚽ *DRAW* — going to PENALTIES! 🔥\n${homeName} ${pkResult.homePk}–${pkResult.awayPk} ${awayName}\n` +
-      `🏆 *${pkResult.winnerId === homeId ? homeName : awayName}* win on penalties!`, msg);
+      `🏆 *${pkResult.winnerId === homeId ? homeName : awayName}* win on penalties!`);
     if (awayId) await sendText(sock, awayId,
       `⚽ *DRAW* — PENALTIES! 🔥\n${awayName} ${pkResult.awayPk}–${pkResult.homePk} ${homeName}\n` +
       `🏆 *${pkResult.winnerId === awayId ? awayName : homeName}* win on penalties!`);

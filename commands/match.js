@@ -163,10 +163,6 @@ async function handle({ sock, msg, jid, sender, cmd, args, replyTo, mentioned })
       await sendText(sock, jid, `❌ That user isn't registered yet. Ask them to *!start* first.`, msg);
       return;
     }
-    if (target === sender) {
-      await sendText(sock, jid, `😅 You can't challenge yourself!`, msg);
-      return;
-    }
     if (tUser.inMatch || myUser.inMatch) {
       await sendText(sock, jid, `❌ One of you is already in a match!`, msg);
       return;
