@@ -35,10 +35,14 @@ const USERS = {
 
 const sock = {
   sendMessage: async (jid, content, opts) => {
+    // Skip junk/no-op recipients (fake 'AI' opponent, null, or the
+    // "undefined@s.whatsapp.net" that sneaks in on vs-AI sessions). These
+    // produce no real output and would otherwise double-print in this harness.
+    if (!jid || jid === 'AI' || String(jid).includes('undefined')) return { key: { id: 'dev-ai' } };
     const text = content && content.text;
     if (content && content.image) {
       const cap = content.caption || '';
-      console.log(`\n  🖼️  [image → ${short(jid)}] ${cap.split('\n')[0]}`);
+      console.log(`\n  🖼️  [image → ${JSON.stringify(jid)}] ${cap.split('\n')[0]}`);
       if (cap.split('\n').length > 1) console.log('     ' + cap.split('\n').slice(1).join('\n     '));
     }
     if (text) {
@@ -71,9 +75,13 @@ function buildMsg(line) {
 
 // ── console REPL ───────────────────────────────────────────────────────────
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+let closed = false;
+rl.on('close', () => { closed = true; });
 
 function prompt() {
+  if (closed) return; // piped stdin ended; let any in-flight async match finish
   rl.question(`\n[${activeUser}] ! `, async (line) => {
+    if (closed) return;
     const cmd = line.trim();
     if (cmd === '!quit' || cmd === '.exit') { console.log('Bye.'); rl.close(); return; }
     if (cmd === '') { prompt(); return; }
@@ -88,7 +96,7 @@ function prompt() {
       try { await router.handle(sock, buildMsg(cmd)); }
       catch (e) { console.log('  ⚠️ harness error:', e.message); }
     } else {
-      console.log('  type commands starting with "!" (e.g. !menu). !quit to exit.');
+      console.log('  type commands starting from "!" (e.g. !menu). !quit to exit.');
     }
     prompt();
   });

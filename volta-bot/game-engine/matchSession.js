@@ -454,7 +454,7 @@ async function sendMatchImage(s, { homeScore, awayScore, goalScorers = [], mvp =
       timeOfDay: Math.random() < 0.5 ? 'day' : 'night',
       weather: s.weather === 'raining' ? 'raining' : 'sunny',
     });
-    const caption = isTournament ? '🏆 Tournament tie' : '⚔️ Match result';
+    const caption = `${isTournament ? '🏆 Tournament' : '⚔️ Match result'}: ${s.homeName} ${homeScore}–${awayScore} ${s.awayName}`;
     await broadcast(s, { image: buf, caption });
   } catch (err) {
     logger.error({ err }, 'match image render failed');
