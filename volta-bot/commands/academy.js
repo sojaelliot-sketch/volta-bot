@@ -1,7 +1,7 @@
 // commands/academy.js
 //   !academy            — show your academy (youth) players
-//   !scout [id]         — scout a NEW youth talent (costs ACADEMY.SCOUT_COST)
-//   !promote [id]       — promote a youth prospect into your squad (Reserves)
+//   !scout              — scout a NEW youth talent (costs ACADEMY.SCOUT_COST)
+//   !youthpromote [id]  — promote a youth prospect into your squad (Reserves)
 //
 // Youth players are created as real players up-front (with a CVC id) but kept
 // out of the manager's active pool until promoted. They live in the `youth`
@@ -33,7 +33,7 @@ async function handle({ sock, msg, jid, sender, cmd, args, user }) {
       await sendText(sock, jid,
         `🏫 *YOUR ACADEMY*\n━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `No youth prospects yet.\n\n` +
-        `💡 *!scout* costs ${money(ACADEMY.SCOUT_COST)} and discovers a young talent (${ACADEMY.YOUTH_STAT_MIN}–${ACADEMY.YOUTH_STAT_MAX} OVR). Then *!promote [id]* adds them to your squad.`, msg);
+        `💡 *!scout* costs ${money(ACADEMY.SCOUT_COST)} and discovers a young talent (${ACADEMY.YOUTH_STAT_MIN}–${ACADEMY.YOUTH_STAT_MAX} OVR). Then *!youthpromote [id]* adds them to your squad.`, msg);
       return;
     }
     let out = `🏫 *YOUR ACADEMY* (${youth.length}/${ACADEMY.SCOUT_SLOTS})\n━━━━━━━━━━━━━━━━━━━━━━━\n`;
@@ -42,7 +42,7 @@ async function handle({ sock, msg, jid, sender, cmd, args, user }) {
       if (!p) continue;
       out += `${p.id} · ${p.name} (${p.role === 'goalkeeper' ? '🧤 GK' : '⚽'}) — ${youthTotal(p)} OVR · Pot ${p.potential}\n`;
     }
-    out += `━━━━━━━━━━━━━━━━━━━━━━━\n💡 *!promote [id]* adds a prospect to your squad.`;
+    out += `━━━━━━━━━━━━━━━━━━━━━━━\n💡 *!youthpromote [id]* adds a prospect to your squad.`;
     await sendText(sock, jid, out, msg);
     return;
   }
@@ -55,7 +55,7 @@ async function handle({ sock, msg, jid, sender, cmd, args, user }) {
     }
     const youth = user.youth || [];
     if (youth.length >= ACADEMY.SCOUT_SLOTS) {
-      await sendText(sock, jid, `⚠️ Academy is full (${ACADEMY.SCOUT_SLOTS} slots). Promote someone with *!promote [id]* first.`, msg);
+      await sendText(sock, jid, `⚠️ Academy is full (${ACADEMY.SCOUT_SLOTS} slots). Promote someone with *!youthpromote [id]* first.`, msg);
       return;
     }
     const p = buildYouthPlayer(sender);
@@ -69,15 +69,15 @@ async function handle({ sock, msg, jid, sender, cmd, args, user }) {
       `🌟 Potential: ${p.potential}\n` +
       `📊 ${youthTotal(p)} OVR (${ACADEMY.YOUTH_STAT_MIN}–${ACADEMY.YOUTH_STAT_MAX})\n` +
       `🆔 ${p.id}\n━━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `💡 *!promote ${p.id}* to add them to your squad.`, msg);
+      `💡 *!youthpromote ${p.id}* to add them to your squad.`, msg);
     return;
   }
 
-  // ── scout [id] / promote [id] → promote a youth prospect ──
-  if (cmd === 'scout' || cmd === 'promote') {
+  // ── scout / youthpromote [id] → promote a youth prospect ──
+  if (cmd === 'scout' || cmd === 'youthpromote') {
     const idArg = args[0];
     if (!idArg) {
-      await sendText(sock, jid, `⚠️ Usage: *!promote [id]* — add a youth prospect to your squad.`, msg);
+      await sendText(sock, jid, `⚠️ Usage: *!youthpromote [id]* — add a youth prospect to your squad.`, msg);
       return;
     }
     const id = findYouthId(user, idArg);

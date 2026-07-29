@@ -25,7 +25,7 @@ const MENU = `⚽ *VOLTA* — ${BRAND}
 !market  !buy  !list  !sell  !search
 
 *🏫 ACADEMY*
-!academy  !scout  !promote
+!academy  !scout  !youthpromote
 
 *🏟️ STADIUMS*
 !stadium  !buystadium  !sellstadium

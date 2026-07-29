@@ -103,7 +103,7 @@ const handlers = {
   setbounty: () => require('./setbounty'),
   academy: () => require('./academy'),
   scout: () => require('./academy'),
-  promoteacademy: () => require('./academy'),
+  youthpromote: () => require('./academy'),
   on: () => require('./botstate'),
   off: () => require('./botstate'),
   reload: () => require('./reload'),
@@ -114,7 +114,7 @@ const handlers = {
   ban: () => require('./mod'),
   unban: () => require('./mod'),
   warn: () => require('./mod'),
-  promote: () => require('./promote'),
+  promote: () => require('./mod'),
   demote: () => require('./mod'),
   kick: () => require('./mod'),
   kickgc: () => require('./mod'),
@@ -261,12 +261,7 @@ async function handle(sock, msg) {
 
     logger.info({ jid, sender, cmd, args }, `cmd: ${cmd}`);
 
-    // DEBUG: log sender resolution
-    console.error(`[DEBUG] sender=${sender} botJid=${botJid} botIsOwner=${botIsOwner} fromMe=${msg.key?.fromMe} jid=${jid} participant=${msg.key?.participant}`);
-    const foundUser = User.getByWhatsappId(sender);
-    console.error(`[DEBUG] user found: ${!!foundUser}, registered: ${foundUser?.registered}`);
-
-    let user = foundUser;
+    let user = User.getByWhatsappId(sender);
 
     // ── ban check ──
     if (User.isBanned(user)) {
