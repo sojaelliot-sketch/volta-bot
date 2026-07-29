@@ -52,6 +52,10 @@ const COMMANDS = {
   kick:         { usage: '!kick [id]',                     desc: 'Moderator+ removes a user from the group.' },
   ban:          { usage: '!ban [id]',                      desc: 'Officer+ bans a user.' },
   unban:        { usage: '!unban [id]',                    desc: 'Officer+ unbans a user.' },
+  on:           { usage: '!on',                            desc: 'Owner turns bot on (all commands live).' },
+  off:          { usage: '!off',                           desc: 'Owner turns bot off (only !on works).' },
+  afk:          { usage: '!afk [reason] / !afk off',       desc: 'Owner mutes bot chat (commands still work).' },
+  debug:        { usage: '!debug [fix|reset]',             desc: 'Owner diagnostics + fix stuck states.' },
 };
 
 async function handle({ sock, msg, jid, cmd, args }) {
