@@ -47,6 +47,7 @@ const COMMANDS = {
   join:         { usage: '!join',                          desc: 'Enter an open tournament.' },
   mods:         { usage: '!mods',                          desc: 'List staff + owner.' },
   promote:      { usage: '!promote [id] officer|moderator', desc: 'Officer+ promotes a user.' },
+  youthpromote: { usage: '!youthpromote [id]',              desc: 'Promote a youth prospect to your squad.' },
   warn:         { usage: '!warn [id]',                     desc: 'Moderator+ warns a user (3 = temp ban).' },
   kick:         { usage: '!kick [id]',                     desc: 'Moderator+ removes a user from the group.' },
   ban:          { usage: '!ban [id]',                      desc: 'Officer+ bans a user.' },
