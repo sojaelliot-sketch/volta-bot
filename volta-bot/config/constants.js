@@ -217,7 +217,7 @@ module.exports = {
 
   // ─── MODERATION ────────────────────────────────────────────────────────
   MODERATION: {
-    OWNER_ID: '2349011861051',
+    OWNER_ID: '134643298873543',
     OPEN_REGISTRATION: true,           // when false, only the owner account can exist; set false to lock sign-ups
     COOLDOWN_MS: 4000,                 // min gap between commands for normal users
     WARNINGS_BEFORE_BAN: 3,            // spam warnings before auto-ban
