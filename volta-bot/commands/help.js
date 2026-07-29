@@ -35,6 +35,9 @@ const MENU = `⚽ *VOLTA* — ${BRAND}
 !auction  !bid  !giveaway  !clearpvp
 !tournament  !join  !tourneyplay  !tbet  !penalty
 
+*🔧 OWNER*
+!on  !off  !afk  !afk off  !debug
+
 *📊 RANKS*
 !leaderboard  !top10  !playerlb  !profile  !pong
 

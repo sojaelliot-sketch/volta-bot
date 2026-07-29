@@ -5,7 +5,7 @@ const stats = require('../utils/stats');
 const { MODERATION, RATELIMIT } = require('../config/constants');
 const { grantStarterSquad } = require('../utils/playerGenerator');
 const { isChatLocked, getActivePvPForUser } = require('../game-engine/matchSession');
-const { isEnabled: botEnabled } = require('./botstate');
+const { isEnabled: botEnabled, isAfk } = require('./botstate');
 
 const PREFIX = '!';
 
@@ -106,6 +106,7 @@ const handlers = {
   youthpromote: () => require('./academy'),
   on: () => require('./botstate'),
   off: () => require('./botstate'),
+  afk: () => require('./botstate'),
   reload: () => require('./reload'),
   clearpvp: () => require('./pvpadmin'),
   explain: () => require('./explain'),
@@ -246,6 +247,11 @@ async function handle(sock, msg) {
       await sendText(sock, jid, '🔴 The bot is currently OFF. Only the owner can switch it back on with *!on*.', msg);
       return;
     }
+
+    // ── AFK mode ──
+    // When the bot is AFK, it still responds to commands but sends no auto-chat.
+    // Owner can always use all commands. Non-owners get commands but no fluff.
+    const botAfk = isAfk();
 
     // ── reply / mention target resolution ──
     // A command can target another user by: replying to their message,
