@@ -31,18 +31,18 @@ async function cmdShop({ sock, msg, jid, user }) {
 !boost form [id] — Hot form 🔥 — ${money(SHOP_CFG.FORM_BOOST)}
 !boostall energy|form — Boost your WHOLE squad — ${money(SHOP_CFG.ENERGY_RESTORE)}×players
 
-*🏥 RECOVERY*
-!surgery [id] — Instant heal from injury — ${money(SHOP_CFG.SURGERY_COST)} (max ${SHOP_CFG.SURGERY_LIMIT}/day)
+ *🏥 RECOVERY*
+!surgery [id|name] — Instant heal from injury — ${money(SHOP_CFG.SURGERY_COST)} (max ${SHOP_CFG.SURGERY_LIMIT}/day)
 
-*🏋️ TRAINING*
-!train [id] — Basic session — ${money(TRAINING.BASE_COST)}
-!train elite [id] — Elite coaching — ${money(TRAINING.ELITE_COST)}
+ *🏋️ TRAINING*
+!train [id|name] — Basic session — ${money(TRAINING.BASE_COST)}
+!train elite [id|name] — Elite coaching — ${money(TRAINING.ELITE_COST)}
 
 *✏️ OTHER*
 !rename [id] [name] — Custom nickname — ${money(SHOP_CFG.RENAME_TOKEN)}
 
 ━━━━━━━━━━━━━━━━━━━━━
-💡 Use *!squad* to find player IDs`, msg);
+ 💡 Use *!squad* to find player IDs or names, or use names directly (e.g. *!surgery Kane*)`, msg);
 }
 
 async function cmdPack({ sock, msg, jid, sender, args, user }) {
@@ -121,13 +121,13 @@ async function cmdBoost({ sock, msg, jid, sender, args, user }) {
   const playerId = args[1];
 
   if (!boostType || !playerId) {
-    await sendText(sock, jid, `⚠️ Usage: *!boost energy [id]* or *!boost form [id]*\n\n⚡ energy — Restore condition to 100% (${money(SHOP_CFG.ENERGY_RESTORE)})\n🔥 form — Set form to Hot (${money(SHOP_CFG.FORM_BOOST)})`, msg);
+    await sendText(sock, jid, `⚠️ Usage: *!boost energy [id|name]* or *!boost form [id|name]*\n\n⚡ energy — Restore condition to 100% (${money(SHOP_CFG.ENERGY_RESTORE)})\n🔥 form — Set form to Hot (${money(SHOP_CFG.FORM_BOOST)})`, msg);
     return;
   }
 
   const player = Player.findByQuery(sender, playerId);
   if (!player) {
-    await sendText(sock, jid, `❌ No player found with ID *${playerId}*. Use *!squad* to find IDs.`, msg);
+    await sendText(sock, jid, `❌ No player found for *${playerId}*. Use *!squad* to find IDs or names.`, msg);
     return;
   }
 
@@ -198,12 +198,12 @@ async function cmdBoostAll({ sock, msg, jid, sender, args, user }) {
 async function cmdSurgery({ sock, msg, jid, sender, args, user }) {
   const playerId = args[0];
   if (!playerId) {
-    await sendText(sock, jid, `⚠️ Usage: *!surgery [id]* — Instantly heal an injured player.\n💰 ${money(SHOP_CFG.SURGERY_COST)} · max ${SHOP_CFG.SURGERY_LIMIT}/day`, msg);
+    await sendText(sock, jid, `⚠️ Usage: *!surgery [id|name]* — Instantly heal an injured player.\n💰 ${money(SHOP_CFG.SURGERY_COST)} · max ${SHOP_CFG.SURGERY_LIMIT}/day`, msg);
     return;
   }
-  const player = Player.getByOwner(sender).find((p) => p.id.startsWith(playerId));
+  const player = Player.findByQuery(sender, playerId);
   if (!player) {
-    await sendText(sock, jid, `❌ No player found with ID *${playerId}*. Use *!squad* to find IDs.`, msg);
+    await sendText(sock, jid, `❌ No player found for *${playerId}*. Use *!squad* to find IDs or names.`, msg);
     return;
   }
   if (!player.injuredUntil || new Date(player.injuredUntil).getTime() <= Date.now()) {
@@ -211,7 +211,7 @@ async function cmdSurgery({ sock, msg, jid, sender, args, user }) {
     return;
   }
 
-  let u = User.getByWhatsappId(sender);
+  const u = User.getByWhatsappId(sender);
   const today = new Date().toISOString().slice(0, 10);
   if (u.surgeryDay !== today) {
     User.update(sender, { surgeryDay: today, surgeriesToday: 0 });
@@ -238,13 +238,13 @@ async function cmdTrain({ sock, msg, jid, sender, args, user }) {
   const playerId = isElite ? args[1] : args[0];
 
   if (!playerId) {
-    await sendText(sock, jid, `⚠️ Usage: *!train [id]* (${money(TRAINING.BASE_COST)}) or *!train elite [id]* (${money(TRAINING.ELITE_COST)})`, msg);
+    await sendText(sock, jid, `⚠️ Usage: *!train [id|name]* (${money(TRAINING.BASE_COST)}) or *!train elite [id|name]* (${money(TRAINING.ELITE_COST)})`, msg);
     return;
   }
 
   const player = Player.findByQuery(sender, playerId);
   if (!player) {
-    await sendText(sock, jid, `❌ No player found with ID *${playerId}*. Use *!squad* to find IDs.`, msg);
+    await sendText(sock, jid, `❌ No player found for *${playerId}*. Use *!squad* to find IDs or names.`, msg);
     return;
   }
 

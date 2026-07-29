@@ -108,12 +108,12 @@ async function cmdFlex({ sock, msg, jid, sender, user }) {
 async function cmdCard({ sock, msg, jid, sender, args }) {
   const idArg = args[0];
   if (!idArg) {
-    await sendText(sock, jid, `⚠️ Usage: *!card [id]* — Get the ID from *!squad*`, msg);
+    await sendText(sock, jid, `⚠️ Usage: *!card [id|name]* — See player details`, msg);
     return;
   }
   const p = findPlayerByShortId(sender, idArg);
   if (!p) {
-    await sendText(sock, jid, `❌ No player found with ID starting *${idArg}*. Check *!squad*.`, msg);
+    await sendText(sock, jid, `❌ No player found for *${idArg}*. Check *!squad*.`, msg);
     return;
   }
 
@@ -173,12 +173,12 @@ ${lines.join('\n')}
 async function cmdBench({ sock, msg, jid, sender, args, user }) {
   const idArg = args[0];
   if (!idArg) {
-    await sendText(sock, jid, `⚠️ Usage: *!bench [id]*`, msg);
+    await sendText(sock, jid, `⚠️ Usage: *!bench [id|name]*`, msg);
     return;
   }
   const p = findPlayerByShortId(sender, idArg);
   if (!p) {
-    await sendText(sock, jid, `❌ No player found with ID starting *${idArg}*.`, msg);
+    await sendText(sock, jid, `❌ No player found for *${idArg}*.`, msg);
     return;
   }
   if (!user.startingXI.includes(p.id)) {
@@ -202,12 +202,12 @@ async function cmdRename({ sock, msg, jid, sender, args, user }) {
   const name = args.slice(1).join(' ').trim().slice(0, 20);
 
   if (!idArg || !name) {
-    await sendText(sock, jid, `⚠️ Usage: *!rename [id] [new name]*\n💰 Costs ${money(SHOP.RENAME_TOKEN)}`, msg);
+    await sendText(sock, jid, `⚠️ Usage: *!rename [id|name] [new name]*\n💰 Costs ${money(SHOP.RENAME_TOKEN)}`, msg);
     return;
   }
   const p = findPlayerByShortId(sender, idArg);
   if (!p) {
-    await sendText(sock, jid, `❌ No player found with ID starting *${idArg}*.`, msg);
+    await sendText(sock, jid, `❌ No player found for *${idArg}*. Use *!squad* for IDs or names.`, msg);
     return;
   }
 

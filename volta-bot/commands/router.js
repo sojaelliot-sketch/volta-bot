@@ -117,11 +117,13 @@ const handlers = {
   promote: () => require('./promote'),
   demote: () => require('./mod'),
   kick: () => require('./mod'),
+  kickgc: () => require('./mod'),
   mods: () => require('./mod'),
   stadium: () => require('./stadium'),
   buystadium: () => require('./stadium'),
   sellstadium: () => require('./stadium'),
   pk: () => require('./stadium'),
+  hustle: () => require('./hustle'),
 };
 
 const PUBLIC_COMMANDS = new Set(['start', 'register', 'help', 'menu', 'top10', 'leaderboard', 'lb', 'invite']);
@@ -129,6 +131,7 @@ const PUBLIC_COMMANDS = new Set(['start', 'register', 'help', 'menu', 'top10', '
 // ─── spam / cooldown tracking ───────────────────────────────────────────────
 const lastCommandAt = new Map();   // sender -> timestamp
 const warnCount     = new Map();    // sender -> warnings
+const afkUsers      = new Set();    // sender -> muted until !afk off
 
 // ─── sliding-window rate limiter ────────────────────────────────────────────
 // Tracks recent command timestamps per sender. If a sender exceeds MAX_IN_WINDOW
@@ -181,19 +184,23 @@ function looksLikeJid(arg) {
 // Resolve a target manager by an explicit jid/id, a reply, a @mention, or a
 // manager NAME (typed as text). The name lookup lets anyone do e.g.
 //   !info Oasis FC      !give 100 John     !dash @Maria
-// without needing a raw number or a quoted message. Returns a normalized jid.
+// without needing a raw number or a quoted message. Returns a normalized jid or null.
+// If the name matches multiple people, prefer the exact match and warn
+// if the first result is only a partial match.
 function resolveByName(arg) {
   if (!arg) return null;
   const s = String(arg).replace(/^@/, '').trim().toLowerCase();
   if (!s) return null;
-  let found = null;
+  let exact = null;
+  let partial = null;
   for (const u of User.all()) {
     if (!u || !u.registered) continue;
     const name = String(u.name || '').toLowerCase();
-    if (name === s) return User.normalizeJid(u.whatsappId);
-    if (name.includes(s) && !found) found = u; // keep first partial match as fallback
+    if (name === s) { exact = u; break; }
+    if (name.includes(s) && !partial) partial = u;
   }
-  return found ? User.normalizeJid(found.whatsappId) : null;
+  if (exact) return User.normalizeJid(exact.whatsappId);
+  return partial ? User.normalizeJid(partial.whatsappId) : null;
 }
 
 function resolveTarget(args, ctx = {}) {
@@ -264,6 +271,26 @@ async function handle(sock, msg) {
       return;
     }
 
+    // ── afk (spam-muted) check ──
+    // When a user spams, they get silently ignored for all commands except !afk off
+    if (afkUsers.has(sender) && cmd !== 'afk') {
+      return;
+    }
+
+    // ── !afk off — unmute yourself ──
+    if (cmd === 'afk') {
+      if (args[0] === 'off') {
+        afkUsers.delete(sender);
+        warnCount.delete(sender);
+        await sendText(sock, jid, `✅ You're unmuted. Take it easy next time! 🐢`, msg);
+      } else if (afkUsers.has(sender)) {
+        await sendText(sock, jid, `💤 You're muted for spamming. Say *!afk off* to start chatting again.`, msg);
+      } else {
+        await sendText(sock, jid, `✅ You're not muted. Keep chatting!`, msg);
+      }
+      return;
+    }
+
     // ── owner / staff can always operate (auto-profile + starter squad) ──
     if (isExempt(sender, user) && (!user || !user.registered)) {
       User.create(sender, User.isOwner(sender) ? 'Oasis FC' : (user?.name || 'Staff'));
@@ -299,8 +326,8 @@ async function handle(sock, msg) {
         warnCount.set(sender, w);
         if (w >= MODERATION.WARNINGS_BEFORE_BAN) {
           warnCount.delete(sender);
-          User.update(sender, { bannedUntil: new Date(now + MODERATION.BAN_DURATION_MS).toISOString(), warnings: 0 });
-          await sendText(sock, jid, `⛔ *Auto-banned for 3 minutes* for spamming commands. Slow down next time! 🐢`, msg);
+          afkUsers.add(sender);
+          await sendText(sock, jid, `🐢 *Too fast!* You're muted until you say *!afk off*. Take a breather.`, msg);
           return;
         }
         await sendText(sock, jid, `⚠️ Slow down! Warning *${w}/${MODERATION.WARNINGS_BEFORE_BAN}*. Space your commands out.`, msg);

@@ -30,8 +30,12 @@ async function handle({ sock, msg, jid, sender, args, replyTo, mentioned }) {
     await sendText(sock, jid, `❌ You need to register first (*!start*).`, msg);
     return;
   }
-  if (!them || !them.registered) {
-    await sendText(sock, jid, `❌ That user isn't registered yet.`, msg);
+  if (!them) {
+    await sendText(sock, jid, `❌ No manager found for that name/mention. Check the spelling or use @mention.`, msg);
+    return;
+  }
+  if (!them.registered) {
+    await sendText(sock, jid, `❌ *${them.name}* hasn't registered yet. They need to use *!start* first.`, msg);
     return;
   }
   if ((me.currency || 0) < amount) {

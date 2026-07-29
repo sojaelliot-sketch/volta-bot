@@ -1,5 +1,6 @@
 // index.js
 require('dotenv').config();
+const readline = require('readline');
 
 const {
   default: makeWASocket,
@@ -28,7 +29,17 @@ let activeSock = null;
 
 const SESSION_DIR = process.env.SESSION_DIR || './sessions';
 const USE_PAIRING_CODE = String(process.env.USE_PAIRING_CODE).toLowerCase() === 'true';
-const PHONE_NUMBER = (process.env.PHONE_NUMBER || '').replace(/\D/g, '');
+let PHONE_NUMBER = (process.env.PHONE_NUMBER || '').replace(/\D/g, '');
+
+function promptPhoneNumber() {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question('[VOLTA] Enter your WhatsApp number (international format, no +): ', (answer) => {
+      rl.close();
+      resolve(answer.replace(/\D/g, ''));
+    });
+  });
+}
 
 let pairingRequested = false;
 let reconnectAttempts = 0;
@@ -53,28 +64,38 @@ async function startBot() {
   });
   activeSock = sock;
 
-  // ── Pairing-code login (alternative to scanning a QR) ──────────────────
-  if (USE_PAIRING_CODE && PHONE_NUMBER && !sock.authState.creds.registered && !pairingRequested) {
-    pairingRequested = true;
-    setTimeout(async () => {
-      try {
-        const code = await sock.requestPairingCode(PHONE_NUMBER);
-        console.log(`[VOLTA] Pairing code for ${PHONE_NUMBER}: ${code}`);
-        console.log('   Open WhatsApp → Linked Devices → Link with phone number, and enter this code.');
-      } catch (err) {
-        logger.error({ err }, 'Failed to request pairing code');
-      }
-    }, 1500);
-  }
-
   sock.ev.on('creds.update', saveCreds);
+
+  // When pairing code succeeds, Baileys sets creds.registered = true but does
+  // NOT close the connection (unlike QR pair-success which triggers a reconnect
+  // from the server). We must force a reconnect so the bot logs in with its
+  // fresh credentials, otherwise WhatsApp may never confirm the pairing.
+  let wasRegistered = Boolean(sock?.authState?.creds?.registered);
+  sock.ev.on('creds.update', (newCreds) => {
+    if (!wasRegistered && newCreds.registered) {
+      wasRegistered = true;
+      reconnectAttempts = 0;
+      console.log('[VOLTA] ✅ Device linked! Reconnecting with fresh credentials...');
+      setTimeout(() => { try { sock.end(new Error('Pairing complete')); } catch {} }, 500);
+    }
+  });
 
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect, qr } = update;
 
-    if (qr && !USE_PAIRING_CODE) {
-      console.log('[VOLTA] Scan this QR code with WhatsApp → Linked Devices → Link a Device:');
-      qrcode.generate(qr, { small: true });
+    if (qr) {
+      if (USE_PAIRING_CODE && PHONE_NUMBER && !pairingRequested) {
+        pairingRequested = true;
+        sock.requestPairingCode(PHONE_NUMBER).then(code => {
+          console.log(`[VOLTA] Pairing code for ${PHONE_NUMBER}: ${code}`);
+          console.log('   Open WhatsApp → Linked Devices → Link with phone number, and enter this code.');
+        }).catch(err => {
+          logger.error({ err }, 'Failed to request pairing code');
+        });
+      } else {
+        console.log('[VOLTA] Scan this QR code with WhatsApp → Linked Devices → Link a Device:');
+        qrcode.generate(qr, { small: true });
+      }
     }
 
     if (connection === 'close') {
@@ -91,6 +112,7 @@ async function startBot() {
       }
 
       reconnectAttempts += 1;
+      pairingRequested = false;
       const delay = Math.min(3000 * reconnectAttempts, 15000);
       console.log(`[VOLTA] Reconnecting in ${delay / 1000}s (attempt ${reconnectAttempts})...`);
       setTimeout(startBot, delay);
@@ -119,34 +141,21 @@ async function startBot() {
     }
   });
 
-  // ── Group join welcome ──────────────────────────────────────────────────
-  sock.ev.on('group-participants.update', async ({ id, participants, action }) => {
-    if (action !== 'add') return;
-    for (const participant of participants) {
-      if (participant === sock.user?.id) continue; // don't welcome the bot itself
-      try {
-        await sendText(sock, id,
-          `👋 *Welcome to VOLTA!* ⚽ — ${BRAND}\n` +
-          `━━━━━━━━━━━━━━━━━━━━━━\n` +
-          `🎮 You've joined the pitch! Here's how to start:\n\n` +
-          `1️⃣ *!start* — create your manager profile\n` +
-          `2️⃣ *!register [name]* — get a FREE starter squad 🎁\n` +
-          `3️⃣ *!play* — jump into your first match 🆚\n` +
-          `4️⃣ *!help* — see EVERYTHING you can do\n` +
-          `5️⃣ *!tutorial* — learn the game like a pro 🍼\n\n` +
-          `💡 Tip: type *!squad* after registering to see your players. Have fun! 🔥`);
-      } catch (err) {
-        logger.error({ err }, 'Failed to send welcome message');
-      }
-    }
-  });
-
   return sock;
 }
 
 async function main() {
   globalThis.__botStartTime = Date.now();
   await connectDB();
+
+  // If pairing code mode is on but no number was set in .env, prompt now.
+  if (USE_PAIRING_CODE && !PHONE_NUMBER) {
+    PHONE_NUMBER = await promptPhoneNumber();
+    if (!PHONE_NUMBER) {
+      console.log('[VOLTA] No phone number entered. Defaulting to QR code mode.');
+    }
+  }
+
   await startBot();
   startTipScheduler(() => activeSock, 60 * 1000);
 

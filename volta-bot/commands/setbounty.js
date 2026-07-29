@@ -25,8 +25,12 @@ async function handle({ sock, msg, jid, sender, args, replyTo, mentioned }) {
     return;
   }
   const u = User.getByWhatsappId(target);
-  if (!u || !u.registered) {
-    await sendText(sock, jid, `❌ No registered manager found for that target.`, msg);
+  if (!u) {
+    await sendText(sock, jid, `❌ No manager found for that name/mention.`, msg);
+    return;
+  }
+  if (!u.registered) {
+    await sendText(sock, jid, `❌ *${u.name}* hasn't registered yet.`, msg);
     return;
   }
 
