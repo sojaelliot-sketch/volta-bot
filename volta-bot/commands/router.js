@@ -220,13 +220,13 @@ async function handle(sock, msg) {
     const jid = msg.key?.remoteJid;
     if (!jid) return;
 
-    // Self-hosted bot: the bot runs on the OWNER's own WhatsApp number, so every
-    // message the owner sends arrives as fromMe:true — and that account IS the
-    // owner. Treat any fromMe message as coming from the canonical owner jid,
-    // so owner commands always work regardless of device/format suffixes, and a
-    // group chat can NEVER hijack OWNER_ID. Messages from anyone else use their
-    // real (normalized) jid.
-    const sender = msg.key?.fromMe
+    // The bot may be logged in as the HOST number (different from OWNER_ID).
+    // Only map fromMe → owner when the logged-in account IS the owner,
+    // so the host has their own identity and the real owner is recognized
+    // regardless of which number the bot is paired with.
+    const botJid = sock?.user?.id ? User.normalizeJid(sock.user.id) : null;
+    const botIsOwner = botJid ? User.isOwner(botJid) : false;
+    const sender = msg.key?.fromMe && botIsOwner
       ? User.normalizeJid(`${MODERATION.OWNER_ID}@s.whatsapp.net`)
       : User.normalizeJid(msg.key?.participant || jid);
     if (jid === 'status@broadcast') return;
