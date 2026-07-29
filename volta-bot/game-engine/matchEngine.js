@@ -92,7 +92,12 @@ function calcDefensePower(defenders, gk, oppMomentum, footballMinute) {
   const momPenalty = momentumEffect(oppMomentum);
   const variance   = withVariance(0, 6);
 
-  return Math.round(defAvg + gkPower + momPenalty + variance);
+  // Normalise: average defAvg + gkPower so DP ≈ AP for equal-quality squads,
+  // making non-shot events balanced. Shot conversion adds a built-in difficulty
+  // offset inside shotGoalProbability.
+  const combined = (defAvg + gkPower) / 2;
+
+  return Math.round(combined + momPenalty + variance);
 }
 
 // Shot conversion uses a logistic formula so finishing scales with the
@@ -101,10 +106,13 @@ function calcDefensePower(defenders, gk, oppMomentum, footballMinute) {
 // K controls sharpness; bigger edge => much higher chance to score.
 function shotGoalProbability(actionPower, gkPower, footballMinute) {
   const K = 16;
+  // Built-in defensive edge so equal squads get ~25% goalP per shot
+  // (exciting but not a guaranteed goal every attack).
+  const DIFFICULTY = 18;
   const lateBoost = footballMinute >= MATCH.LATE_GAME_MINUTE
     ? randInt(0, MATCH.LATE_GAME_BOOST_MAX)
     : 0;
-  const diff = (actionPower + lateBoost) - gkPower;
+  const diff = (actionPower + lateBoost) - gkPower - DIFFICULTY;
   return 1 / (1 + Math.exp(-diff / K));
 }
 

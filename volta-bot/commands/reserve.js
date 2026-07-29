@@ -30,8 +30,8 @@ function findPlayer(ownerId, rawArg) {
 
 async function handle({ sock, msg, jid, sender, args, user }) {
   if (!args.length) {
-    await sendText(sock, jid,
-      `⚠️ Usage:\n*!reserve [id]* — send a player to Reserves\n*!reserve out [id]* — bring them back to the Bench`, msg);
+    const preserves = require('./preserves');
+    await preserves.handle({ sock, msg, jid, sender, user });
     return;
   }
 

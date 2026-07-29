@@ -180,6 +180,14 @@ function settleBets(championJid) {
         `🎯 *Your tournament bet HIT!*\nYou backed *${nameOf(championJid)}* and won *${payout}* Metaworks! 💰`);
     } catch {}
   }
+  // Notify losers too
+  for (const [bettor, bet] of Object.entries(current.bets)) {
+    if (bet.pick === championJid) continue;
+    try {
+      sendText(current.sock, bettor,
+        `💔 *Your tournament bet missed.*\n*${nameOf(championJid)}* won. Your stake of *${bet.stake}* Metaworks is forfeited. Better luck next time!`);
+    } catch {}
+  }
 }
 
 function start() {

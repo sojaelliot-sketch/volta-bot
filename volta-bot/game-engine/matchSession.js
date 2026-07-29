@@ -654,15 +654,17 @@ async function resolveChance(s, sender, raw) {
 
   const attackerSide = s.attacker;
   const defenderSide = attackerSide === 'home' ? 'away' : 'home';
-  const atkStr = attackerSide === 'home' ? s._homeStr : s._awayStr;
-  const defStr = defenderSide === 'home' ? s._homeStr : s._awayStr;
 
   const atkName  = attackerSide === 'home' ? s.homeName : s.awayName;
   const defName  = defenderSide === 'home' ? s.homeName : s.awayName;
   const atkSquad = attackerSide === 'home' ? s.homeSquad : s.awaySquad;
+  const defSquad = defenderSide === 'home' ? s.homeSquad : s.awaySquad;
   const outfield = atkSquad.filter(p => p.role === 'outfield');
   const player   = pick(outfield.length ? outfield : atkSquad);
   const ctx      = { player: Player.displayName(player) || player.name, team: atkName, opp: defName };
+
+  const defOutfield = defSquad.filter(p => p.role === 'outfield');
+  const defGK = defSquad.find(p => p.role === 'goalkeeper');
 
   // Advance the clock and track this attacker's contribution for the MVP vote.
   s.timeElapsed = Math.min(s.timeElapsed + engine.eventDuration('shoot'), MATCH.TOTAL_SECONDS);
@@ -674,11 +676,19 @@ async function resolveChance(s, sender, raw) {
   let line;
   let isGoal = false;
 
+  // Normalise the chosen option's weight so the best option (gw ~1.25) gets
+  // full multiplier and worse choices scale down, giving ~30% swing between
+  // best and worst picks.
+  const gwMult = 0.3 + 0.7 * Math.min(opt.gw / 1.25, 1);
+
   if (s.currentType === 'defend') {
-    // Defensive duel: the responder (defender) tries to win the ball.
-    const dp = (defStr / 4) * opt.gw * MATCH.PVP_DEFEND_WEIGHT * 0.5;
-    const ap = (atkStr / 4) * 0.5 + 20;
-    const winP = 1 / (1 + Math.exp(-((dp - ap) / 60)));
+    // Defensive duel: the responder (defender) chose an option.
+    // Defender uses actual squad defender+Gk stats via calcDefensePower.
+    const baseDp = engine.calcDefensePower(defOutfield, defGK, s[`${attackerSide}Momentum`], fm);
+    const dp = Math.round(baseDp * gwMult);
+    // Attacker uses the on-ball player's actual stats via calcActionPower.
+    const ap = engine.calcActionPower(player, 'dribble', s[`${attackerSide}Momentum`], fm, s.weather, attackerSide === 'home' && s.homeWeatherImmune);
+    const winP = 1 / (1 + Math.exp(-((dp - ap) / 16)));
     const won = Math.random() < winP;
 
     if (won) {
@@ -686,20 +696,20 @@ async function resolveChance(s, sender, raw) {
       s[`${attackerSide}Momentum`] = engine.updateMomentum(s[`${attackerSide}Momentum`], 'MISS');
       line = situ.fillPlaceholders(pick(s.currentSituation.win), ctx);
     } else {
-      s[`${attackerSide}Momentum`] = clamp(s[`${attackerSide}Momentum`] + 6, 0, 100);
-      s[`${defenderSide}Momentum`] = clamp(s[`${defenderSide}Momentum`] - 4, 0, 100);
+      s[`${attackerSide}Momentum`] = engine.updateMomentum(s[`${attackerSide}Momentum`], 'GOAL');
+      s[`${defenderSide}Momentum`] = engine.updateMomentum(s[`${defenderSide}Momentum`], 'MISS');
       line = situ.fillPlaceholders(pick(s.currentSituation.lose), ctx);
     }
   } else {
     // Attacking chance: goal probability from option weight vs defender strength.
-    const ap = (atkStr / 4) * opt.gw * 0.5;
-    const dp = (defStr / 4) * 0.5 + 20;
-    const goalP = 1 / (1 + Math.exp(-((ap - dp) / 60)));
-    isGoal = Math.random() < goalP;
+    // Attacker uses the on-ball player's actual stats via calcActionPower.
+const ap = Math.round(engine.calcActionPower(player, 'shoot', s[`${attackerSide}Momentum`], fm, s.weather, attackerSide === 'home' && s.homeWeatherImmune) * gwMult);
+    const dp = engine.calcDefensePower(defOutfield, defGK, s[`${attackerSide}Momentum`], fm);
+    const shotResult = engine.resolveShotOutcome(ap, dp, fm);
+    isGoal = shotResult === 'goal';
 
     if (isGoal) {
       if (attackerSide === 'home') s.homeScore++; else s.awayScore++;
-      // Track whether either side was ever trailing (for the Comeback badge).
       if (s.homeScore < s.awayScore) s.homeWasBehind = true;
       if (s.awayScore < s.homeScore) s.awayWasBehind = true;
       s.scorerStats[sid].goals++;
@@ -709,7 +719,6 @@ async function resolveChance(s, sender, raw) {
       line = situ.fillPlaceholders(pick(s.currentSituation.goal), ctx);
     } else {
       s[`${attackerSide}Momentum`] = engine.updateMomentum(s[`${attackerSide}Momentum`], 'MISS');
-      // Keeper catch (clean claim) vs block/save.
       const caught = Math.random() < MATCH.PVP_CATCH_PCT;
       if (caught) {
         s[`${defenderSide}Momentum`] = engine.updateMomentum(s[`${defenderSide}Momentum`], 'BIG_SAVE');
@@ -827,6 +836,21 @@ async function finishPvP(s) {
     const newRankA = calcRank(au ? au.mmr : 1000);
     if (au && newRankA !== au.rank) User.update(s.awayId, { rank: newRankA });
     tourney.resolveByResult(s.homeId, s.awayId, winnerId);
+  }
+
+  // ── BOUNTY: if the loser had a bounty, transfer it to the winner ──
+  if (!s.isAI && winnerId && !isDraw) {
+    const loserId = winnerId === s.homeId ? s.awayId : s.homeId;
+    const loser = User.getByWhatsappId(loserId);
+    if (loser && loser.bounty && loser.bounty > 0) {
+      const bounty = loser.bounty;
+      const winner = User.getByWhatsappId(winnerId);
+      if (winner) {
+        User.update(winnerId, { currency: (winner.currency || 0) + bounty });
+        User.update(loserId, { bounty: 0 });
+        await broadcast(s, `💰 *BOUNTY CLAIMED!* ${User.getByWhatsappId(loserId)?.name || '???'}'s bounty of ${bounty} Metaworks goes to ${winner.name}! 🎯`);
+      }
+    }
   }
 
   // ── MVP: goals + involvement + rating, not just raw goals ──
@@ -1192,6 +1216,21 @@ async function endMatch(session) {
       awayMsg += `\n⭐ MVP: ${mvp ? Player.displayName(mvp) : awayScorer.player} (+${ECONOMY.MVP_BONUS})`;
     }
     await sendText(sock, awayId, awayMsg);
+  }
+
+  // ── BOUNTY (PvP): if the loser had a bounty, transfer it to the winner ──
+  if (!isAI && winnerId && !isDraw) {
+    const loserId = winnerId === homeId ? awayId : homeId;
+    const loser = User.getByWhatsappId(loserId);
+    if (loser && loser.bounty && loser.bounty > 0) {
+      const bounty = loser.bounty;
+      const winner = User.getByWhatsappId(winnerId);
+      if (winner) {
+        User.update(winnerId, { currency: (winner.currency || 0) + bounty });
+        User.update(loserId, { bounty: 0 });
+        await sendText(sock, chatJid, `💰 *BOUNTY CLAIMED!* ${User.getByWhatsappId(loserId)?.name || '???'}'s bounty of ${bounty} Metaworks goes to ${winner.name}! 🎯`);
+      }
+    }
   }
 
   // ── persist a match record for the web-app history view ──
