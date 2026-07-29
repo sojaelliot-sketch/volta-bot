@@ -261,7 +261,12 @@ async function handle(sock, msg) {
 
     logger.info({ jid, sender, cmd, args }, `cmd: ${cmd}`);
 
-    let user = User.getByWhatsappId(sender);
+    // DEBUG: log sender resolution
+    console.error(`[DEBUG] sender=${sender} botJid=${botJid} botIsOwner=${botIsOwner} fromMe=${msg.key?.fromMe} jid=${jid} participant=${msg.key?.participant}`);
+    const foundUser = User.getByWhatsappId(sender);
+    console.error(`[DEBUG] user found: ${!!foundUser}, registered: ${foundUser?.registered}`);
+
+    let user = foundUser;
 
     // ── ban check ──
     if (User.isBanned(user)) {
