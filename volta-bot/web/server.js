@@ -57,7 +57,7 @@ function toStrArray(v) {
 // Bump when new web-only endpoints/features are added so the frontend can warn
 // the manager if their running backend process is stale (it loads routes at
 // startup, so editing server.js requires a restart to take effect).
-const WEB_VERSION = 6;
+const WEB_VERSION = 7;
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
@@ -315,11 +315,20 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const p = url.pathname;
 
-  // ── static: serve index.html for "/" ──
-  if (req.method === 'GET' && (p === '/' || p === '/index.html')) {
-    const html = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'));
-    res.writeHead(200, { 'Content-Type': 'text/html', ...CORS });
-    res.end(html);
+  // ── static files from web/public/ ──
+  if (req.method === 'GET' && !p.startsWith('/api/')) {
+    const safePath = p === '/' ? '/index.html' : p;
+    // prevent path traversal
+    const filePath = path.join(PUBLIC_DIR, path.normalize(safePath).replace(/^(\.\.[\/\\])+/, ''));
+    const ext = path.extname(filePath).toLowerCase();
+    const MIME = { '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
+    if (filePath.startsWith(PUBLIC_DIR) && fs.existsSync(filePath)) {
+      const data = fs.readFileSync(filePath);
+      res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream', ...CORS });
+      res.end(data);
+      return;
+    }
+    send(res, 404, { error: 'not found' });
     return;
   }
 

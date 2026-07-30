@@ -323,7 +323,7 @@ let ME = null;
 // chosen URL in localStorage and let the manager edit it from Settings — the
 // hardcoded value below is only the initial default. This is what fixes the
 // "Leaderboard won't load" problem: pick the current backend URL in Settings.
-let API_BASE = (localStorage.getItem('volta_base') || "https://footpad-cobbler-attempt.ngrok-free.dev").trim();
+let API_BASE = (localStorage.getItem('volta_base') || "").trim();
 function apiBase(){ return API_BASE ? API_BASE.replace(/\/$/, '') : window.location.origin; }
 function setApiBase(url){
   API_BASE = (url || '').trim();
