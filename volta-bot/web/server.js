@@ -57,7 +57,7 @@ function toStrArray(v) {
 // Bump when new web-only endpoints/features are added so the frontend can warn
 // the manager if their running backend process is stale (it loads routes at
 // startup, so editing server.js requires a restart to take effect).
-const WEB_VERSION = 7;
+const WEB_VERSION = 8;
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
@@ -89,6 +89,8 @@ const sessions = new Map();
 const penaltySessions = new Map();
 // In-progress high/low games keyed by token (two-step: start then guess).
 const highlowSessions = new Map();
+// Track last heartbeat per token for online status display.
+const onlineUsers = new Map(); // token -> { ts, name }
 
 function loadSessions() {
   try {
@@ -467,6 +469,12 @@ const server = http.createServer(async (req, res) => {
     // ── HEARTBEAT (heartbeat monitor pings this; reports bot liveliness) ──
     if (p === '/api/heartbeat' && req.method === 'GET') {
       reload();
+      const token = url.searchParams.get('token');
+      if (token && sessions.has(token)) {
+        const uid = sessions.get(token);
+        const u = db.findById('users', uid);
+        onlineUsers.set(token, { ts: Date.now(), name: (u && u.name) || 'Manager' });
+      }
       const users = db.all('users').filter((u) => u.registered).length;
       return send(res, 200, { ok: true, ts: Date.now(), users, version: WEB_VERSION });
     }
@@ -1109,22 +1117,25 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { bounties: list });
     }
 
-    // ── BOUNTY SET (owner-only, mirrors !setbounty) ──
+    // ── BOUNTY SET (any manager with enough MW can set a bounty) ──
     if (p === '/api/bounty/set' && req.method === 'POST') {
       const body = await readBody(req);
       const id = authenticate(body.token);
       if (!id) return send(res, 401, { error: 'Not logged in.' });
-      if (!User.isOwner(id)) return send(res, 403, { error: 'Bounties are owner-only.' });
       const price = parseInt(body.price, 10);
       if (!price || price <= 0) return send(res, 400, { error: 'A positive bounty price is required.' });
       const targetName = String(body.target || '').trim().toLowerCase();
       if (!targetName) return send(res, 400, { error: 'Target manager name required.' });
       reload();
+      const me = db.findById('users', id);
+      if (!me || (me.currency || 0) < price) return send(res, 400, { error: `Not enough Metaworks. Need ${price}.` });
       const them = db.all('users').find((u) => u.registered && (u.name || '').trim().toLowerCase() === targetName);
       if (!them) return send(res, 404, { error: 'No registered manager with that team name.' });
-      User.update(them.whatsappId, { bounty: price });
+      if (them.whatsappId === id) return send(res, 400, { error: 'You cannot set a bounty on yourself.' });
+      User.update(id, { currency: (me.currency || 0) - price });
+      User.update(them.whatsappId, { bounty: (them.bounty || 0) + price });
       reload();
-      return send(res, 200, { ok: true, target: them.name, price });
+      return send(res, 200, { ok: true, target: them.name, price: (them.bounty || 0) + price });
     }
 
     // ── MY MATCHES: match history involving the logged-in manager ──
@@ -1153,6 +1164,286 @@ const server = http.createServer(async (req, res) => {
       const losses = list.filter((m) => m.outcome === 'L').length;
       const draws = list.filter((m) => m.outcome === 'D').length;
       return send(res, 200, { matches: list, summary: { wins, losses, draws } });
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  NEW FEATURES — search · full leaderboard · retire · train stat ·
+    //  tip · online · chat · PBL · tournament last · view profile
+    // ══════════════════════════════════════════════════════════════════════
+
+    // ── FULL LEADERBOARD (all registered managers, paginated) ──
+    if (p === '/api/leaderboard/all' && req.method === 'GET') {
+      reload();
+      const page = Math.max(1, parseInt(url.searchParams.get('page'), 10) || 1);
+      const pageSize = 20;
+      const board = db.all('users')
+        .filter((u) => u.registered)
+        .sort((a, b) => (b.mmr || 0) - (a.mmr || 0));
+      const total = board.length;
+      const start = (page - 1) * pageSize;
+      const paginated = board.slice(start, start + pageSize)
+        .map((u, i) => {
+          const played = (u.wins || 0) + (u.losses || 0) + (u.draws || 0);
+          return {
+            rank: start + i + 1, name: u.name, mmr: u.mmr || 0,
+            wins: u.wins || 0, losses: u.losses || 0, draws: u.draws || 0,
+            winRate: played ? Math.round(((u.wins || 0) / played) * 100) : 0,
+            totalGoals: u.totalGoals || 0, tournamentWins: u.tournamentWins || 0,
+            streak: u.winStreak || 0, bounty: u.bounty || 0,
+            isOwner: (() => { try { return User.isOwner(u.whatsappId); } catch { return false; } })(),
+          };
+        });
+      return send(res, 200, { board: paginated, total, page, totalPages: Math.ceil(total / pageSize) });
+    }
+
+    // ── RETIRE (with confirmation) ──
+    if (p === '/api/retire' && req.method === 'POST') {
+      const body = await readBody(req);
+      const id = authenticate(body.token);
+      if (!id) return send(res, 401, { error: 'Not logged in.' });
+      reload();
+      const u = db.findById('users', id);
+      if (!u) return send(res, 404, { error: 'Account not found.' });
+      if (!body.confirm) {
+        const allP = [...(u.startingXI || []), ...(u.bench || []), ...(u.reserves || [])];
+        const count = allP.filter((pid) => db.findById('players', pid)).length;
+        return send(res, 400, { error: `Set confirm=true to retire. You have ${count} players. You will keep 1 legacy card + 5000 Metaworks.`, playerCount: count });
+      }
+      const allPlayers = [...(u.startingXI || []), ...(u.bench || []), ...(u.reserves || [])];
+      const playerCards = allPlayers.map((pid) => db.findById('players', pid)).filter(Boolean);
+      let legacyId = null;
+      if (playerCards.length > 0) {
+        const best = playerCards.sort((a, b) => playerTotal(b) - playerTotal(a))[0];
+        legacyId = best.id;
+        for (const pl of playerCards) { if (pl.id !== best.id) transfer.transferPlayer(pl.id, id, transfer.HOUSE); }
+      }
+      User.update(id, {
+        startingXI: legacyId ? [legacyId] : [], bench: [], reserves: [], youth: [],
+        currency: 5000, wins: 0, losses: 0, draws: 0, totalGoals: 0, mmr: 0, rank: 'Bronze',
+        retired: true, retiredAt: new Date().toISOString(), legacyCard: legacyId,
+      });
+      reload();
+      return send(res, 200, { ok: true, message: 'You have retired. Legacy card + 5000 Metaworks kept.', user: publicUser(db.findById('users', id)) });
+    }
+
+    // ── TRAIN SPECIFIC STAT ──
+    if (p === '/api/shop/train/stat' && req.method === 'POST') {
+      const body = await readBody(req);
+      const id = authenticate(body.token);
+      if (!id) return send(res, 401, { error: 'Not logged in.' });
+      const stat = String(body.stat || '').toLowerCase();
+      const playerId = String(body.playerId || '');
+      const elite = !!body.elite;
+      const cost = elite ? TRAINING.ELITE_COST : TRAINING.BASE_COST;
+      reload();
+      const u = db.findById('users', id);
+      const player = db.findById('players', playerId);
+      if (!player || player.ownerId !== id) return send(res, 404, { error: 'Player not found in your squad.' });
+      if ((u.currency || 0) < cost) return send(res, 400, { error: `Not enough Metaworks. Need ${cost}.` });
+      const validStats = player.role === 'goalkeeper'
+        ? ['reflex', 'positioning', 'anticipation', 'strength', 'composure']
+        : ['pace', 'skill', 'shooting', 'stamina', 'composure'];
+      if (!validStats.includes(stat)) return send(res, 400, { error: `Invalid stat. Choose: ${validStats.join(', ')}` });
+      const currentVal = player.stats[stat] || 60;
+      if (currentVal >= TRAINING.STAT_CAP) return send(res, 400, { error: `${stat} already at max (${TRAINING.STAT_CAP}).` });
+      const roll = randInt(1, 100);
+      let gain = 0, outcome;
+      if (elite) {
+        if (roll <= TRAINING.GREAT_ROLL) { gain = randInt(3, 6); outcome = 'Excellent session! Massive improvement!'; }
+        else if (roll <= 90) { gain = randInt(1, 3); outcome = 'Good session. Solid gains.'; }
+        else { gain = 0; outcome = 'Tough session. No improvement this time.'; }
+      } else {
+        if (roll <= TRAINING.GREAT_ROLL) { gain = randInt(2, 4); outcome = 'Great session! Noticeable improvement!'; }
+        else if (roll <= TRAINING.POOR_ROLL + 40) { gain = randInt(1, 2); outcome = 'Decent session. Small improvement.'; }
+        else { outcome = 'Rough session. Player struggled.'; }
+      }
+      const newVal = Math.min(currentVal + gain, TRAINING.STAT_CAP);
+      if (newVal !== currentVal) Player.update(playerId, { stats: { ...player.stats, [stat]: newVal } });
+      User.update(id, { currency: (u.currency || 0) - cost });
+      reload();
+      const nu = db.findById('users', id);
+      const rp = publicUser(nu).roster.find((r) => r.id === playerId);
+      return send(res, 200, { ok: true, user: publicUser(nu), player: rp, trained: { stat, from: currentVal, to: newVal, gain: newVal - currentVal, outcome } });
+    }
+
+    // ── TIP / SEND MONEY ──
+    if (p === '/api/tip' && req.method === 'POST') {
+      const body = await readBody(req);
+      const id = authenticate(body.token);
+      if (!id) return send(res, 401, { error: 'Not logged in.' });
+      const targetName = String(body.target || '').trim().toLowerCase();
+      const amount = parseInt(body.amount, 10);
+      if (!targetName) return send(res, 400, { error: 'Recipient team name required.' });
+      if (!amount || amount <= 0) return send(res, 400, { error: 'Amount must be positive.' });
+      reload();
+      const me = db.findById('users', id);
+      if (!me || !me.registered) return send(res, 404, { error: 'Account not found.' });
+      if ((me.currency || 0) < amount) return send(res, 400, { error: `Not enough Metaworks. You have ${(me.currency || 0).toLocaleString()}.` });
+      const them = db.all('users').find((u) => u.registered && (u.name || '').trim().toLowerCase() === targetName);
+      if (!them) return send(res, 404, { error: 'No registered manager with that team name.' });
+      if (them.whatsappId === id) return send(res, 400, { error: 'You cannot tip yourself.' });
+      User.update(id, { currency: (me.currency || 0) - amount });
+      User.update(them.whatsappId, { currency: (them.currency || 0) + amount });
+      reload();
+      return send(res, 200, { ok: true, amount, to: them.name, user: publicUser(db.findById('users', id)) });
+    }
+
+    // ── ONLINE USERS ──
+    if (p === '/api/online' && req.method === 'GET') {
+      const now = Date.now();
+      const online = [];
+      for (const [token, info] of onlineUsers.entries()) {
+        if (info && (now - info.ts) < 120000) { // 2 min window
+          online.push({ name: info.name });
+        }
+      }
+      return send(res, 200, { online, count: online.length });
+    }
+
+    // ── CHAT: GET MESSAGES ──
+    if (p === '/api/chat' && req.method === 'GET') {
+      const chatFile = path.join(DATA_DIR, 'chat.json');
+      const chatData = readJsonFile(chatFile);
+      const messages = chatData.messages || [];
+      const since = parseInt(url.searchParams.get('since'), 10) || 0;
+      const filtered = since ? messages.filter((m) => m.ts > since) : messages.slice(-50);
+      return send(res, 200, { messages: filtered });
+    }
+
+    // ── CHAT: SEND MESSAGE ──
+    if (p === '/api/chat' && req.method === 'POST') {
+      const body = await readBody(req);
+      const id = authenticate(body.token);
+      if (!id) return send(res, 401, { error: 'Not logged in.' });
+      const text = String(body.text || '').trim().slice(0, 300);
+      if (!text) return send(res, 400, { error: 'Message required.' });
+      reload();
+      const u = db.findById('users', id);
+      if (!u) return send(res, 404, { error: 'Account not found.' });
+      const chatFile = path.join(DATA_DIR, 'chat.json');
+      const chatData = readJsonFile(chatFile);
+      if (!chatData.messages) chatData.messages = [];
+      chatData.messages.push({ id: uuid(), senderId: id, senderName: u.name || 'Anonymous', text, ts: Date.now() });
+      if (chatData.messages.length > 200) chatData.messages = chatData.messages.slice(-200);
+      fs.writeFileSync(chatFile, JSON.stringify(chatData, null, 2));
+      return send(res, 200, { ok: true });
+    }
+
+    // ── PBL: Player / Leader of the Week ──
+    if (p === '/api/pbl' && req.method === 'GET') {
+      reload();
+      const now = new Date();
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const matches = readJsonFile(MATCHES_FILE);
+      const recentMatches = Object.values(matches).filter((m) => new Date(m.date) > weekAgo);
+      const playerGoals = {};
+      const playerMOTM = {};
+      const managerWins = {};
+      for (const match of recentMatches) {
+        for (const scorer of (match.goalScorers || [])) {
+          const key = scorer.player || scorer.playerId || 'unknown';
+          if (!playerGoals[key]) playerGoals[key] = { name: key, goals: 0 };
+          playerGoals[key].goals++;
+        }
+        if (match.mvp && match.mvp.name) {
+          const key = match.mvp.name;
+          if (!playerMOTM[key]) playerMOTM[key] = { name: key, motm: 0 };
+          playerMOTM[key].motm++;
+        }
+        const winner = match.homeScore > match.awayScore ? match.homeName : match.awayScore > match.homeScore ? match.awayName : null;
+        if (winner) {
+          if (!managerWins[winner]) managerWins[winner] = { name: winner, wins: 0 };
+          managerWins[winner].wins++;
+        }
+      }
+      const topScorer = Object.values(playerGoals).sort((a, b) => b.goals - a.goals)[0] || null;
+      const topMOTM = Object.values(playerMOTM).sort((a, b) => b.motm - a.motm)[0] || null;
+      const topManager = Object.values(managerWins).sort((a, b) => b.wins - a.wins)[0] || null;
+      const allPlayers = db.all('players');
+      const topOVR = allPlayers.sort((a, b) => playerTotal(b) - playerTotal(a))[0] || null;
+      return send(res, 200, {
+        topScorer, topMOTM, topManager,
+        topOVR: topOVR ? { name: topOVR.nickname || topOVR.name, ovr: playerTotal(topOVR), rarity: topOVR.rarity } : null,
+        weekRange: { from: weekAgo.toISOString(), to: now.toISOString() },
+        matchesPlayed: recentMatches.length,
+      });
+    }
+
+    // ── LAST TOURNAMENT WINNER ──
+    if (p === '/api/tournament/last' && req.method === 'GET') {
+      reload();
+      const live = db.findById('tournaments', 'live');
+      if (live) {
+        const nameOf = (x) => {
+          if (!x || x === 'BYE') return 'BYE';
+          return User.getByWhatsappId(x)?.name || (typeof x === 'string' ? x.split('@')[0] : 'TBD');
+        };
+        const rounds = (live.rounds || []).map((round) => ({
+          matches: round.map((m) => ({
+            a: nameOf(m.a), b: nameOf(m.b),
+            winner: m.winner ? nameOf(m.winner) : null,
+          })),
+        }));
+        return send(res, 200, { active: true, category: live.category, prize: live.prize, players: (live.players || []).length, rounds });
+      }
+      return send(res, 200, { active: false, last: null });
+    }
+
+    // ── VIEW MANAGER PROFILE (public, by name or id) ──
+    if (p === '/api/profile' && req.method === 'GET') {
+      reload();
+      const nameKey = String(url.searchParams.get('name') || '').trim().toLowerCase();
+      if (!nameKey) return send(res, 400, { error: 'Manager name required.' });
+      const u = db.all('users').find((x) => x.registered && (x.name || '').trim().toLowerCase() === nameKey);
+      if (!u) return send(res, 404, { error: 'No registered manager with that team name.' });
+      const players = db.all('players');
+      const pmap = Object.fromEntries(players.map((pl) => [pl.id, pl]));
+      const ownedIds = [...(u.startingXI || []), ...(u.bench || []), ...(u.reserves || [])];
+      const roster = ownedIds.map((pid) => pmap[pid]).filter(Boolean).map((pl) => ({
+        id: pl.id, name: pl.nickname || pl.name, role: pl.role, rarity: pl.rarity,
+        level: pl.level, total: playerTotal(pl), condition: pl.condition, form: pl.form, stats: pl.stats,
+      }));
+      const totalGames = (u.wins || 0) + (u.losses || 0) + (u.draws || 0);
+      return send(res, 200, {
+        manager: {
+          name: u.name, mmr: u.mmr, rank: u.rank,
+          wins: u.wins || 0, losses: u.losses || 0, draws: u.draws || 0,
+          winRate: totalGames ? Math.round(((u.wins || 0) / totalGames) * 100) : 0,
+          totalGoals: u.totalGoals || 0, tournamentWins: u.tournamentWins || 0,
+          winStreak: u.winStreak || 0, badges: u.badges || [], bounty: u.bounty || 0,
+          retired: !!u.retired, legacyCard: u.legacyCard || null,
+          isOwner: (() => { try { return User.isOwner(u.whatsappId); } catch { return false; } })(),
+        },
+        roster: roster.sort((a, b) => b.total - a.total),
+      });
+    }
+
+    // ── MARKET: search listings ──
+    if (p === '/api/market/search' && req.method === 'GET') {
+      reload();
+      marketProcessExpired();
+      const q = String(url.searchParams.get('q') || '').trim().toLowerCase();
+      const sort = String(url.searchParams.get('sort') || 'newest');
+      const viewerId = authenticate(url.searchParams.get('token'));
+      let listings = db.all('market')
+        .filter((l) => l.sold === false && !marketIsExpired(l));
+      if (q) {
+        listings = listings.filter((l) => {
+          const p = db.findById('players', l.playerId);
+          return p && ((p.name || '').toLowerCase().includes(q) || (p.nickname || '').toLowerCase().includes(q));
+        });
+      }
+      if (sort === 'price_low') listings.sort((a, b) => a.price - b.price);
+      else if (sort === 'price_high') listings.sort((a, b) => b.price - a.price);
+      else if (sort === 'ovr') {
+        listings.sort((a, b) => {
+          const pa = db.findById('players', a.playerId);
+          const pb = db.findById('players', b.playerId);
+          return (pb ? playerTotal(pb) : 0) - (pa ? playerTotal(pa) : 0);
+        });
+      } else listings.sort((a, b) => new Date(b.listedAt) - new Date(a.listedAt));
+      const result = listings.slice(0, 30).map((l) => marketView(l, viewerId)).filter(Boolean);
+      return send(res, 200, { listings: result, q, sort });
     }
 
     send(res, 404, { error: 'unknown endpoint' });

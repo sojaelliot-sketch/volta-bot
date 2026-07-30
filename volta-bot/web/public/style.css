@@ -277,3 +277,22 @@ select.field{width:auto;min-width:200px;flex:1;margin-bottom:0}
   .stats{grid-template-columns:repeat(2,1fr)}.wrap{padding:16px 12px 108px}
   .topbar .brand{display:none}.stat.wide{grid-column:1/-1!important}
 }
+
+/* ── Chat ── */
+.chat-box{max-height:340px;overflow-y:auto;border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:6px;background:var(--soft);min-height:120px}
+.chat-line{display:flex;gap:8px;align-items:baseline;font-size:13px;padding:3px 0;border-bottom:1px dashed var(--line);animation:rise .25s}
+.chat-line:last-child{border-bottom:none}
+.chat-line.me{flex-direction:row-reverse}
+.chat-name{font-weight:800;font-size:11px;letter-spacing:.04em;white-space:nowrap;color:var(--accent);min-width:60px}
+.chat-line.me .chat-name{color:var(--muted)}
+.chat-text{flex:1;word-break:break-word}
+.chat-ts{font-size:10px;color:var(--muted);white-space:nowrap}
+
+/* ── PBL (Player & Leader of the Week) ── */
+.pbl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.pbl-card{border:2px solid var(--line);border-radius:var(--radius);padding:16px;text-align:center;animation:rise .45s;transition:.18s;background:var(--paper)}
+.pbl-card:hover{box-shadow:4px 4px 0 var(--accent);transform:translateY(-2px)}
+.pbl-icon{font-size:28px;margin-bottom:6px}
+.pbl-title{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+.pbl-name{font-weight:800;font-size:15px}
+.pbl-stat{font-size:12px;color:var(--muted);margin-top:4px}

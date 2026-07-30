@@ -63,6 +63,9 @@
     <div class="sec-title"><h2>📈 Achievements</h2></div>
     <div class="achv" id="achv"></div>
 
+    <div class="sec-title"><h2>🏅 Player & Leader of the Week</h2><button class="btn ghost sm" id="pblRefresh">Refresh</button></div>
+    <div class="pbl-grid" id="pblGrid"></div>
+
     <div class="sec-title"><h2>Starting XI</h2><span class="muted mono" id="xiCount"></span></div>
     <div class="xi" id="xi"></div>
 
@@ -77,6 +80,15 @@
 
     <div class="sec-title"><h2>🏆 Top Players</h2></div>
     <div class="roster" id="topPlayers"></div>
+
+    <div class="sec-title"><h2>💬 Chatroom</h2><span class="hb" id="chatHb"><span class="dot pulse"></span><span id="chatHbTxt">live</span></span></div>
+    <div class="panel">
+      <div class="chat-box" id="chatBox"></div>
+      <div class="ctrl" style="margin-top:10px">
+        <input class="field" id="chatInput" type="text" placeholder="type a message…" maxlength="300" style="flex:1;margin-bottom:0" />
+        <button class="btn sm" id="chatSend">Send</button>
+      </div>
+    </div>
   </section>
 
   <section id="shop" class="hidden">
@@ -197,13 +209,23 @@
   <section id="lbView" class="hidden">
     <div class="sec-title" style="margin-top:0"><h2>Leaderboard · Top 20 MMR</h2></div>
     <table class="lb">
-      <thead><tr><th>#</th><th>Manager</th><th>MMR</th><th>W</th><th>L</th><th>D</th></tr></thead>
+      <thead><tr><th>#</th><th>Manager</th><th>MMR</th><th>W</th><th>L</th><th>D</th><th>WR</th><th>⚽</th><th>🏆</th></tr></thead>
       <tbody id="lbBody"></tbody>
     </table>
   </section>
 
   <section id="marketView" class="hidden">
     <div class="sec-title" style="margin-top:0"><h2>🏪 Transfer Market</h2><button class="btn sm" id="mktRefresh">Refresh</button></div>
+    <div class="ctrl" style="margin-bottom:14px">
+      <input class="field" id="mktSearch" type="text" placeholder="search players…" style="flex:1;margin-bottom:0;min-width:140px" />
+      <select class="field" id="mktSort" style="width:auto;min-width:130px;margin-bottom:0">
+        <option value="newest">Newest</option>
+        <option value="price_low">Price Low→High</option>
+        <option value="price_high">Price High→Low</option>
+        <option value="ovr">OVR ↓</option>
+      </select>
+      <button class="btn ghost sm" id="mktSearchBtn">Search</button>
+    </div>
     <div class="roster" id="mktList"></div>
 
     <div class="sec-title"><h2>📤 List a player</h2></div>
@@ -274,35 +296,69 @@
       <div id="cmpRes" style="margin-top:14px"></div>
     </div>
 
+    <div class="sec-title"><h2>💸 Send Money</h2></div>
+    <div class="panel">
+      <div class="desc">Transfer Metaworks to another registered manager.</div>
+      <div class="ctrl">
+        <input class="field" id="tipTarget" type="text" placeholder="recipient team name" style="flex:1;margin-bottom:0" />
+        <input class="field" id="tipAmount" type="number" min="1" placeholder="amount" style="max-width:140px;flex:initial;margin-bottom:0" />
+        <button class="btn sm" id="tipBtn">Send</button>
+      </div>
+      <div class="gres" id="tipRes" style="margin-top:12px">Enter a team name and amount.</div>
+    </div>
+
     <div class="sec-title"><h2>🎯 Bounty Board</h2><button class="btn ghost sm" id="bountyRefresh">Refresh</button></div>
-    <div class="panel" id="ownerBounty" style="display:none">
-      <div class="desc">Owner tools: place a bounty on a manager. Beat them in a PvP match to claim it.</div>
+    <div class="panel" id="bountyPanel">
+      <div class="desc">Place a bounty on a manager. Anyone can set bounties now.</div>
       <div class="ctrl">
         <input class="field" id="bountyTarget" type="text" placeholder="target team name" style="flex:1;margin-bottom:0" />
         <input class="field" id="bountyPrice" type="number" min="1" placeholder="amount" style="max-width:140px;flex:initial;margin-bottom:0" />
         <button class="btn sm" id="bountySetBtn">Set bounty</button>
       </div>
-      <div class="gres" id="bountySetRes" style="margin-top:12px">Owner only.</div>
+      <div class="gres" id="bountySetRes" style="margin-top:12px"></div>
     </div>
     <div class="roster" id="bountyList"></div>
 
     <div class="sec-title"><h2>📜 My Matches</h2></div>
     <div class="gres" id="myMatchSummary" style="margin-bottom:12px">Loading your record…</div>
     <div class="timeline" id="myMatches"></div>
+
+    <div class="sec-title"><h2>⚠️ Retire</h2></div>
+    <div class="panel">
+      <div class="desc">Retire from VOLTA. You will keep your best player as a legacy card and 5000 Metaworks. All other players are sold to the house.</div>
+      <button class="btn ghost sm" id="retireBtn" style="border-color:#e74c3c;color:#e74c3c">Retire from VOLTA</button>
+      <div class="gres" id="retireRes" style="margin-top:12px"></div>
+    </div>
+  </section>
+
+  <section id="chatView" class="hidden">
+    <div class="sec-title" style="margin-top:0"><h2>💬 Chatroom</h2><span class="hb" id="chatHb2"><span class="dot pulse"></span><span id="chatHbTxt2">live</span></span></div>
+    <div class="panel">
+      <div class="chat-box" id="chatBox2"></div>
+      <div class="ctrl" style="margin-top:10px">
+        <input class="field" id="chatInput2" type="text" placeholder="type a message…" maxlength="300" style="flex:1;margin-bottom:0" />
+        <button class="btn sm" id="chatSend2">Send</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="onlineView" class="hidden">
+    <div class="sec-title" style="margin-top:0"><h2>🟢 Online Now</h2><button class="btn ghost sm" id="onlineRefresh">Refresh</button></div>
+    <div class="panel" id="onlineList"></div>
   </section>
 </div>
 
-<nav class="nav hidden" id="nav">
-  <button data-view="dash" class="active"><span class="ic">▦</span>Dashboard</button>
-  <button data-view="hubView"><span class="ic">🔎</span>Hub</button>
-  <button data-view="searchView"><span class="ic">🔍</span>Search</button>
-  <button data-view="academyView"><span class="ic">🏫</span>Academy</button>
-  <button data-view="tournamentView"><span class="ic">🏆</span>Cup</button>
-  <button data-view="marketView"><span class="ic">🏪</span>Market</button>
-  <button data-view="shop"><span class="ic">🛍️</span>Shop</button>
-  <button data-view="games"><span class="ic">🎮</span>Games</button>
-  <button data-view="lbView"><span class="ic">🏆</span>Leaders</button>
-</nav>
+  <nav class="nav hidden" id="nav">
+    <button data-view="dash" class="active"><span class="ic">▦</span>Home</button>
+    <button data-view="hubView"><span class="ic">🔎</span>Hub</button>
+    <button data-view="searchView"><span class="ic">🔍</span>Players</button>
+    <button data-view="marketView"><span class="ic">🏪</span>Market</button>
+    <button data-view="shop"><span class="ic">🛍️</span>Shop</button>
+    <button data-view="games"><span class="ic">🎮</span>Games</button>
+    <button data-view="lbView"><span class="ic">🏆</span>Leaders</button>
+    <button data-view="chatView"><span class="ic">💬</span>Chat</button>
+    <button data-view="onlineView"><span class="ic">🟢</span>Online</button>
+  </nav>
 
 <div id="modal" class="modal hidden">
   <div class="box">
@@ -331,7 +387,7 @@ function setApiBase(url){
   else { localStorage.removeItem('volta_base'); API_BASE = window.location.origin; }
 }
 function show(view){
-  ['login','dash','hubView','searchView','academyView','tournamentView','marketView','shop','games','lbView'].forEach(s=>$(s).classList.toggle('hidden', s!==view));
+  ['login','dash','hubView','searchView','academyView','tournamentView','marketView','shop','games','lbView','chatView','onlineView'].forEach(s=>$(s).classList.toggle('hidden', s!==view));
   const loggedIn = view!=='login';
   $('topbar').classList.toggle('hidden', !loggedIn);
   $('nav').classList.toggle('hidden', !loggedIn);
@@ -342,7 +398,9 @@ function show(view){
   if(view==='academyView') loadAcademy();
   if(view==='tournamentView') loadTournament();
   if(view==='hubView') loadHub();
-  if(view==='dash') startHeartbeat();
+  if(view==='dash'){ startHeartbeat(); startChatPolling(); }
+  if(view==='chatView') startChatPolling();
+  if(view==='onlineView') loadOnline();
 }
 let mktTimer = null;
 function startMarketLive(){ if(mktTimer) return; mktTimer = setInterval(()=>{ if(!$('marketView').classList.contains('hidden')) loadMarket(true); }, 15000); }
@@ -425,7 +483,7 @@ function applyTheme(t){ document.documentElement.setAttribute('data-theme', t); 
 $('themeBtn').onclick = () => { const cur=document.documentElement.getAttribute('data-theme'); applyTheme(cur==='dark'?'light':'dark'); };
 applyTheme(localStorage.getItem('volta_theme') || 'light');
 
-function afterLogin(){ renderDash(); buildShop(); loadExtra(); renderBadges(); loadDaily(); checkBackend(); show('dash'); }
+function afterLogin(){ renderDash(); buildShop(); loadExtra(); renderBadges(); loadDaily(); loadPBL(); checkBackend(); show('dash'); }
 
 // ── dashboard ──
 function renderDash(){
@@ -538,10 +596,28 @@ $('renameBtn').onclick = async () => {
   catch(e){ toast(e.message); }
 };
 
-// ── leaderboard ──
-async function loadLeaderboard(){
-  try{ const { board } = await api('/api/leaderboard');
-    $('lbBody').innerHTML = board.map(r=>`<tr><td>${r.rank}</td><td>${r.name}</td><td>${r.mmr}</td><td>${r.wins}</td><td>${r.losses}</td><td>${r.draws}</td></tr>`).join('');
+// ── leaderboard (full) ──
+let lbPage = 1;
+async function loadLeaderboard(page){
+  lbPage = page || 1;
+  try{
+    const { board, total, totalPages } = await api('/api/leaderboard/all?page='+lbPage);
+    let html = board.map(r=>{
+      const ownerTag = r.isOwner ? ' <span class="tag" style="background:var(--accent);color:var(--accent-ink)">OWNER</span>' : '';
+      const bountyTag = r.bounty ? ` <span class="mini">🎯 ${r.bounty}</span>` : '';
+      return `<tr><td>${r.rank}</td><td>${r.name}${ownerTag}</td><td>${r.mmr}</td><td>${r.wins}</td><td>${r.losses}</td><td>${r.draws}</td><td>${r.winRate}%</td><td>${r.totalGoals}⚽</td><td>${r.tournamentWins}🏆</td>${bountyTag?'<td>'+bountyTag+'</td>':''}</tr>`;
+    }).join('');
+    if(!html) html = '<tr><td colspan="10" class="muted">No managers yet.</td>';
+    $('lbBody').innerHTML = html;
+    let pag = '';
+    if(totalPages > 1){
+      if(lbPage > 1) pag += `<button class="btn ghost sm" onclick="loadLeaderboard(${lbPage-1})">← Prev</button>`;
+      pag += `<span class="muted" style="padding:0 10px">Page ${lbPage}/${totalPages} (${total} managers)</span>`;
+      if(lbPage < totalPages) pag += `<button class="btn ghost sm" onclick="loadLeaderboard(${lbPage+1})">Next →</button>`;
+    }
+    document.getElementById('lbPag')?.remove();
+    const pagEl = document.createElement('div'); pagEl.id='lbPag'; pagEl.style.cssText='display:flex;justify-content:center;align-items:center;margin-top:14px;gap:8px'; pagEl.innerHTML=pag;
+    $('lbBody').closest('table').after(pagEl);
   }catch(e){ toast(e.message); }
 }
 
@@ -571,6 +647,205 @@ async function loadExtra(){
         <div class="row"><span class="mini">OVR ${p.ovr}</span>${posTag(p.position)}${rarityTag(p.rarity)}</div>
         <div class="row"><span class="mini">⚽ ${p.goals}G</span><span class="mini">⭐ ${p.motm} MOTM</span></div></div>`).join('');
   }catch(e){ $('topPlayers').innerHTML = `<div class="muted">Top players unavailable.</div>`; }
+}
+
+// ── PBL (Player & Leader of the Week) ──
+async function loadPBL(){
+  try{
+    const d = await api('/api/pbl');
+    let html = '';
+    if(d.topScorer) html += `<div class="pbl-card"><div class="pbl-icon">⚽</div><div class="pbl-title">Top Scorer</div><div class="pbl-name">${d.topScorer.name}</div><div class="pbl-stat">${d.topScorer.goals} goals</div></div>`;
+    if(d.topMOTM) html += `<div class="pbl-card"><div class="pbl-icon">⭐</div><div class="pbl-title">Most MOTM</div><div class="pbl-name">${d.topMOTM.name}</div><div class="pbl-stat">${d.topMOTM.motm} awards</div></div>`;
+    if(d.topManager) html += `<div class="pbl-card"><div class="pbl-icon">🏆</div><div class="pbl-title">Manager of the Week</div><div class="pbl-name">${d.topManager.name}</div><div class="pbl-stat">${d.topManager.wins} wins</div></div>`;
+    if(d.topOVR) html += `<div class="pbl-card"><div class="pbl-icon">💎</div><div class="pbl-title">Highest OVR</div><div class="pbl-name">${d.topOVR.name}</div><div class="pbl-stat">${d.topOVR.ovr} OVR · ${d.topOVR.rarity}</div></div>`;
+    if(!html) html = '<div class="muted">No match data this week yet. Play some matches!</div>';
+    html += `<div class="muted" style="font-size:11px;margin-top:10px">${d.matchesPlayed} matches this week</div>`;
+    $('pblGrid').innerHTML = html;
+  }catch(e){ $('pblGrid').innerHTML = '<div class="muted">PBL unavailable.</div>'; }
+}
+$('pblRefresh')?.addEventListener('click', loadPBL);
+
+// ── CHAT (polling) ──
+let chatTimer = null;
+let chatLastTs = 0;
+function startChatPolling(){
+  if(chatTimer) return;
+  loadChatMessages();
+  chatTimer = setInterval(loadChatMessages, 4000);
+}
+async function loadChatMessages(){
+  try{
+    const { messages } = await api('/api/chat?since=' + chatLastTs);
+    if(messages.length === 0) return;
+    const isAtBottom = ($('chatBox') && $('chatBox').scrollTop + $('chatBox').clientHeight >= $('chatBox').scrollHeight - 40) || ($('chatBox2') && $('chatBox2').scrollTop + $('chatBox2').clientHeight >= $('chatBox2').scrollHeight - 40);
+    for(const m of messages){
+      chatLastTs = Math.max(chatLastTs, m.ts);
+      const d = new Date(m.ts);
+      const ts = d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+      const isMe = m.senderId === ME?.whatsappId;
+      const line = `<div class="chat-line${isMe?' me':''}"><span class="chat-name">${m.senderName}</span><span class="chat-text">${m.text}</span><span class="chat-ts">${ts}</span></div>`;
+      $('chatBox')?.insertAdjacentHTML('beforeend', line);
+      $('chatBox2')?.insertAdjacentHTML('beforeend', line);
+    }
+    if(isAtBottom){ if($('chatBox')) $('chatBox').scrollTop = $('chatBox').scrollHeight; if($('chatBox2')) $('chatBox2').scrollTop = $('chatBox2').scrollHeight; }
+  }catch{}
+}
+async function sendChat(){
+  const input = $('chatInput') || $('chatInput2');
+  const text = input?.value.trim();
+  if(!text) return;
+  input.value = '';
+  try{ await api('/api/chat', {method:'POST', body:JSON.stringify({token:TOKEN, text})}); loadChatMessages(); }catch(e){ toast(e.message); }
+}
+$('chatSend')?.addEventListener('click', sendChat);
+$('chatSend2')?.addEventListener('click', sendChat);
+$('chatInput')?.addEventListener('keydown', e=>{ if(e.key==='Enter') sendChat(); });
+$('chatInput2')?.addEventListener('keydown', e=>{ if(e.key==='Enter') sendChat(); });
+
+// ── ONLINE USERS ──
+async function loadOnline(){
+  try{
+    const { online, count } = await api('/api/online');
+    const isMeOnline = online.some(u => u.name === ME?.name);
+    let html = `<div style="margin-bottom:14px"><span class="mini">${count} manager${count!==1?'s':''} online</span>${isMeOnline?'<span class="mini" style="background:var(--accent);color:var(--accent-ink)">You are here</span>':''}</div>`;
+    if(online.length){
+      html += `<div class="roster">` + online.map(u=>`<div class="pc"><div class="nm"><span>${u.name}</span></div><div class="row"><span class="mini" style="background:var(--accent);color:var(--accent-ink)">● Online</span></div></div>`).join('') + `</div>`;
+    } else {
+      html += '<div class="muted">No one else is online right now.</div>';
+    }
+    $('onlineList').innerHTML = html;
+  }catch(e){ $('onlineList').innerHTML = '<div class="muted">Could not load online users.</div>'; }
+}
+$('onlineRefresh')?.addEventListener('click', loadOnline);
+
+// ── TIP / SEND MONEY ──
+$('tipBtn').onclick = async ()=>{
+  const target = $('tipTarget').value.trim();
+  const amount = parseInt($('tipAmount').value, 10);
+  if(!target || !amount) return toast('Enter a team name and amount.');
+  try{
+    const r = await api('/api/tip', {method:'POST', body:JSON.stringify({token:TOKEN, target, amount})});
+    ME = r.user; renderDash();
+    $('tipRes').textContent = `💸 Sent ${r.amount.toLocaleString()} MW to ${r.to} ✓`;
+    toast(`Sent ${r.amount.toLocaleString()} MW ✓`);
+  }catch(e){ $('tipRes').textContent = e.message; }
+};
+
+// ── RETIRE (with confirmation) ──
+$('retireBtn').onclick = async ()=>{
+  if(!$('retireRes').dataset.step){
+    const r = await api('/api/retire', {method:'POST', body:JSON.stringify({token:TOKEN, confirm:false})}).catch(()=>({error:'Could not check.'}));
+    $('retireRes').innerHTML = `⚠️ ${r.error || 'Are you sure?'}<br><br><button class="btn sm" id="retireConfirm" style="border-color:#e74c3c;color:#e74c3c">Yes, retire me</button> <button class="btn ghost sm" id="retireCancel">Cancel</button>`;
+    $('retireRes').dataset.step = '1';
+    $('retireConfirm').onclick = async ()=>{
+      try{
+        const r = await api('/api/retire', {method:'POST', body:JSON.stringify({token:TOKEN, confirm:true})});
+        ME = r.user; renderDash();
+        $('retireRes').innerHTML = '✅ ' + r.message;
+        delete $('retireRes').dataset.step;
+        toast('Retired. Farewell, manager.');
+      }catch(e){ $('retireRes').textContent = e.message; }
+    };
+    $('retireCancel').onclick = ()=>{ $('retireRes').innerHTML = 'Retirement cancelled.'; delete $('retireRes').dataset.step; };
+  }
+};
+
+// ── MARKET SEARCH (with sort) ──
+$('mktSearchBtn').addEventListener('click', ()=> loadMarketSearch());
+$('mktSearch').addEventListener('keydown', e=>{ if(e.key==='Enter') loadMarketSearch(); });
+$('mktSort').addEventListener('change', ()=> loadMarketSearch());
+async function loadMarketSearch(){
+  const q = ($('mktSearch').value || '').trim();
+  const sort = $('mktSort').value;
+  try{
+    const { listings } = await api('/api/market/search?q='+encodeURIComponent(q)+'&sort='+sort+(TOKEN?'&token='+TOKEN:''));
+    $('mktList').innerHTML = listings.length ? listings.map(mktPlayerCard).join('')
+      : `<div class="muted">No listings found.</div>`;
+    $('mktList').querySelectorAll('[data-buy]').forEach(b=> b.onclick = ()=> buyListing(b.dataset.buy));
+  }catch(e){ $('mktList').innerHTML = `<div class="muted">Search failed: ${e.message}</div>`; }
+}
+
+// ── TRAIN SPECIFIC STAT (upgrades the shop panel) ──
+let selectedTrainStat = null;
+function showTrainStatPicker(player){
+  if(!player) return;
+  const stats = player.role==='goalkeeper'
+    ? [{k:'reflex',l:'REF'},{k:'positioning',l:'POS'},{k:'anticipation',l:'ANT'},{k:'strength',l:'STR'},{k:'composure',l:'COM'}]
+    : [{k:'pace',l:'PAC'},{k:'skill',l:'SKL'},{k:'shooting',l:'SHO'},{k:'stamina',l:'STA'},{k:'composure',l:'COM'}];
+  const pickerId = 'statPicker';
+  let el = document.getElementById(pickerId);
+  if(!el){ el = document.createElement('div'); el.id=pickerId; el.className='ctrl'; el.style.marginTop='8px'; $('trainRes').before(el); }
+  el.innerHTML = stats.map(s=>`<button class="btn ghost sm" data-stat="${s.k}">${s.l} ${player.stats?.[s.k]||'?'}</button>`).join('');
+  el.querySelectorAll('button[data-stat]').forEach(b=>{
+    b.onclick = ()=>{ selectedTrainStat = b.dataset.stat; el.querySelectorAll('button').forEach(x=>x.classList.remove('active')); b.classList.add('active'); };
+  });
+}
+
+// ── PROFILE VIEW (for scouting from market/search) ──
+async function openProfile(name){
+  try{
+    const { manager:m, roster } = await api('/api/profile?name='+encodeURIComponent(name));
+    const badges = (m.badges||[]).map(k=>`<span class="mini">${k}</span>`).join(' ') || 'None';
+    const rosterHtml = roster.slice(0,8).map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px dashed var(--line)">
+      <span style="font-weight:700;font-size:13px">${p.name}</span>
+      <span class="mini">${p.rarity} · ${p.role==='goalkeeper'?'GK':'OF'} · ${p.total}</span>
+    </div>`).join('');
+    $('modalBody').innerHTML = `
+      <h3>${m.name}${m.isOwner?' <span class="tag" style="background:var(--accent);color:var(--accent-ink)">OWNER</span>':''}</h3>
+      <div class="row" style="margin-top:8px">
+        <span class="mini">MMR ${m.mmr}</span><span class="mini">${m.wins}W·${m.losses}L·${m.draws}D</span>
+        <span class="mini">Win ${m.winRate}%</span><span class="mini">⚽ ${m.totalGoals}</span>
+        <span class="mini">🏆 ${m.tournamentWins}</span><span class="mini">🔥 ${m.winStreak}</span>
+        ${m.bounty?`<span class="mini" style="background:#e74c3c;color:#fff">🎯 ${m.bounty} bounty</span>`:''}
+      </div>
+      ${m.retired?'<div class="mini" style="margin-top:8px;background:#e74c3c;color:#fff">Retired</div>':''}
+      <div style="margin-top:14px;font-weight:700;font-size:13px">Top Players</div>
+      ${rosterHtml || '<div class="muted">No players.</div>'}
+      <div class="ctrl" style="margin-top:16px">
+        <input class="field" id="profileTipAmt" type="number" min="1" placeholder="amount" style="max-width:120px;flex:initial;margin-bottom:0" />
+        <button class="btn sm" id="profileTipBtn">💸 Send MW</button>
+      </div>`;
+    $('modal').classList.remove('hidden');
+    $('profileTipBtn').onclick = async ()=>{
+      const amt = parseInt($('profileTipAmt').value,10);
+      if(!amt) return;
+      try{
+        const r = await api('/api/tip', {method:'POST', body:JSON.stringify({token:TOKEN, target:name, amount:amt})});
+        ME=r.user; renderDash(); toast(`Sent ${amt} MW ✓`); $('modal').classList.add('hidden');
+      }catch(e){ toast(e.message); }
+    };
+  }catch(e){ toast(e.message); }
+}
+
+// ── TOURNAMENT LAST WINNER (show in bracket view) ──
+async function loadTournamentLast(){
+  try{
+    const t = await api('/api/tournament/last');
+    if(t.active){
+      const catLabel = t.category ? t.category.toUpperCase() : 'CUP';
+      let html = `<div class="panel"><div class="row" style="margin-bottom:8px">
+        <span class="mini">🏆 ${catLabel}</span><span class="mini">💲 ${t.prize} prize</span><span class="mini">${t.players} entrants</span></div></div>`;
+      html += `<div class="bracket">`;
+      const roundLabels = ['Final','Semi-finals','Quarter-finals','Round of 16'];
+      (t.rounds||[]).forEach((r, i)=>{
+        const label = roundLabels[r.matches.length-1] || `Round ${i+1}`;
+        html += `<div class="br-round"><div class="br-h">${label}</div>`;
+        r.matches.forEach(m=>{
+          const wa = m.winner && m.winner===m.a;
+          const wb = m.winner && m.winner===m.b;
+          html += `<div class="br-match">
+            <span class="${wa?'win':''}">${m.a}${wa?' ✅':''}</span>
+            <span class="vs">vs</span>
+            <span class="${wb?'win':''}">${m.b}${wb?' ✅':''}</span></div>`;
+        });
+        html += `</div>`;
+      });
+      html += `</div>`;
+      $('tbv').innerHTML = html;
+    } else {
+      $('tbv').innerHTML = `<div class="muted">No tournament running. Start one in WhatsApp with <span class="mono">!tournament start</span>.</div>`;
+    }
+  }catch(e){ $('tbv').innerHTML = `<div class="muted">Bracket unavailable.</div>`; }
 }
 
 // ── BADGES + ACHIEVEMENTS + DAILY (dashboard) ──
@@ -646,10 +921,10 @@ $('analyzeBtn').onclick = async ()=>{
 
 // ── HUB (manager scout · compare · bounties · my matches) ──
 async function loadHub(){
-  $('ownerBounty').style.display = (ME && ME.isOwner) ? 'block' : 'none';
   fillCompareSelects();
   loadBounties();
   loadMyMatches();
+  $('bountyPanel').style.display = 'block';
 }
 $('mgrBtn').onclick = loadManager;
 $('mgrName').addEventListener('keydown', e=>{ if(e.key==='Enter') loadManager(); });
@@ -1001,13 +1276,15 @@ function mktPlayerCard(l){
   </div>`;
 }
 async function loadMarket(silent){
+  const q = ($('mktSearch')?.value || '').trim();
+  const sort = $('mktSort')?.value || 'newest';
   try{
-    const { listings } = await api('/api/market' + (TOKEN ? '?token='+TOKEN : ''));
+    const { listings } = await api('/api/market/search?q='+encodeURIComponent(q)+'&sort='+sort+(TOKEN?'&token='+TOKEN:''));
     $('mktList').innerHTML = listings.length ? listings.map(mktPlayerCard).join('')
       : `<div class="muted">Market is empty — the AI is restocking…</div>`;
     $('mktList').querySelectorAll('[data-buy]').forEach(b=> b.onclick = ()=> buyListing(b.dataset.buy));
     if(!silent) fillMarketSelects();
-  }catch(e){ if(!silent) $('mktList').innerHTML = `<div class="muted">Could not load market. Check Settings → backend URL. (${e.message})</div>`; }
+  }catch(e){ if(!silent) $('mktList').innerHTML = `<div class="muted">Could not load market. (${e.message})</div>`; }
 }
 $('mktRefresh').onclick = loadMarket;
 async function buyListing(id){
@@ -1100,32 +1377,9 @@ $('scoutBtn').onclick = async ()=>{
   catch(e){ toast(e.message); }
 };
 
-// ── TOURNAMENT BRACKET VIEW (TBV) ──
+// ── TOURNAMENT BRACKET VIEW (TBV) — uses /api/tournament/last ──
 async function loadTournament(){
-  try{
-    const t = await api('/api/tournament');
-    if(!t.active){ $('tbv').innerHTML = `<div class="muted">No tournament running right now. Start one in WhatsApp with <span class="mono">!tournament start</span>.</div>`; return; }
-    const catLabel = t.category ? t.category.toUpperCase() : 'CUP';
-    let html = `<div class="panel"><div class="row" style="margin-bottom:8px">
-      <span class="mini">🏆 ${catLabel}</span><span class="mini">💲 ${t.prize} prize</span><span class="mini">${t.players} entrants</span></div></div>`;
-    html += `<div class="bracket">`;
-    const roundLabels = ['Final','Semi-finals','Quarter-finals','Round of 16'];
-    t.rounds.forEach((r, i)=>{
-      const label = roundLabels[r.matches.length-1] || `Round ${i+1}`;
-      html += `<div class="br-round"><div class="br-h">${label}</div>`;
-      r.matches.forEach(m=>{
-        const wa = m.winner && m.winner===m.a;
-        const wb = m.winner && m.winner===m.b;
-        html += `<div class="br-match">
-          <span class="${wa?'win':''}">${m.a}${wa?' ✅':''}</span>
-          <span class="vs">vs</span>
-          <span class="${wb?'win':''}">${m.b}${wb?' ✅':''}</span></div>`;
-      });
-      html += `</div>`;
-    });
-    html += `</div>`;
-    $('tbv').innerHTML = html;
-  }catch(e){ $('tbv').innerHTML = `<div class="muted">Bracket unavailable.</div>`; }
+  await loadTournamentLast();
 }
 $('tbvRefresh').onclick = loadTournament;
 
