@@ -56,6 +56,15 @@ const COMMANDS = {
   off:          { usage: '!off',                           desc: 'Owner turns bot off (only !on works).' },
   afk:          { usage: '!afk [reason] / !afk off',       desc: 'Owner mutes bot chat (commands still work).' },
   debug:        { usage: '!debug [fix|reset]',             desc: 'Owner diagnostics + fix stuck states.' },
+  rivalry:       { usage: '!rivalry @user',                desc: 'View head-to-head record with another manager.' },
+  trade:         { usage: '!trade @user <card> <card>',   desc: 'Propose a card trade (both must accept).' },
+  press:         { usage: '!press @user',                 desc: 'Send pre-match trash talk.' },
+  curse:         { usage: '!curse @user',                 desc: 'Cast a harmless cosmetic hex on a rival.' },
+  chant:         { usage: '!chant [set <text>|clear]',    desc: 'Set custom fan chant for big moments.' },
+  shield:        { usage: '!shield',                      desc: 'Protect win streak from next loss (1000 MW).' },
+  weeklyawards:  { usage: '!weeklyawards [post]',         desc: 'View weekly awards or post to group.' },
+  formcheck:     { usage: '!formcheck @user',             desc: 'See opponent last 5 results (W-W-L-W-D).' },
+  retire:        { usage: '!retire [confirm]',            desc: 'Retire your club and start fresh with legacy bonus.' },
 };
 
 async function handle({ sock, msg, jid, cmd, args }) {
