@@ -415,7 +415,13 @@ $('warnX').onclick = hideWarn;
 const EXTRA_HEADERS = { 'ngrok-skip-browser-warning': 'true' };
 async function api(path, opts={}){
   const headers = Object.assign({'Content-Type':'application/json'}, EXTRA_HEADERS, opts.headers||{});
-  const res = await fetch(apiBase() + path, Object.assign({}, opts, {headers}));
+  let res;
+  try{ res = await fetch(apiBase() + path, Object.assign({}, opts, {headers})); }
+  catch(e){
+    const msg = isLocal() ? 'Cannot reach the backend — make sure node web/server.js is running.'
+      : 'Cannot reach the backend — open Settings (⚙) and set your tunnel URL.';
+    throw new Error(msg);
+  }
   const data = await res.json().catch(()=>({}));
   if(!res.ok) throw new Error(data.error || 'request failed');
   return data;
@@ -1226,48 +1232,7 @@ async function hlGuess(dir){
 }
 
 // ── SETTINGS (backend URL — fixes Leaderboard / data fetch) ──
-$('settingsBtn').onclick = () => {
-  $('modalBody').innerHTML = `
-    <h3>⚙ Settings</h3>
-    <div class="desc muted" style="font-size:12px;margin-bottom:12px">
-      ${isLocal()
-        ? 'You\'re running locally — the backend is auto-detected. No changes needed unless you\'re using a tunnel.'
-        : 'You\'re on a remote host (GitHub Pages, etc). Paste your backend URL below so the app can reach the API server.'}
-    </div>
-    <div class="desc muted" style="font-size:11px;margin-bottom:8px">Backend URL (leave blank to use same server):</div>
-    <input class="field" id="setBase" type="url" placeholder="e.g. https://your-ngrok-url.ngrok-free.dev" value="${API_BASE}" style="margin-bottom:14px" />
-    <div class="ctrl">
-      <button class="btn sm" id="setSave">Save</button>
-      <button class="btn ghost sm" id="setTest">Test connection</button>
-    </div>
-    <div class="gres" id="setRes" style="margin-top:12px"></div>
-    <div class="sec-title" style="margin-top:20px"><h2>Data</h2></div>
-    <div class="desc muted" style="font-size:12px;margin-bottom:10px">Download a snapshot of your manager profile & squad as JSON.</div>
-    <button class="btn ghost sm" id="setExport">⬇ Export my data</button>`;
-  $('modal').classList.remove('hidden');
-  $('setExport').onclick = () => {
-    if(!ME) return;
-    const blob = new Blob([JSON.stringify(ME, null, 2)], {type:'application/json'});
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `volta-${(ME.name||'manager').replace(/\s+/g,'_')}.json`;
-    a.click(); URL.revokeObjectURL(a.href);
-    toast('Data exported ✓');
-  };
-  $('setSave').onclick = () => {
-    setApiBase($('setBase').value);
-    $('setRes').textContent = 'Saved ✓ Reconnecting…';
-    checkBackend();
-  };
-  $('setTest').onclick = async () => {
-    try {
-      const r = await fetch(apiBase() + '/api/info', {headers:EXTRA_HEADERS});
-      if (!r.ok) throw new Error('bad status');
-      const d = await r.json();
-      $('setRes').textContent = `Connected ✓ backend v${d.version}`;
-    } catch { $('setRes').textContent = 'Could not reach that URL. Check it and try again.'; }
-  };
-};
+$('settingsBtn').onclick = openSettings;
 
 // ── MARKET (browse / buy / list / dash) ──
 function mktPlayerCard(l){
@@ -1410,10 +1375,57 @@ function startHeartbeat(){
 
 // ── boot ──
 (async function boot(){
+  // Check for ?backend=URL in the address bar (handy shortcut from GitHub Pages link)
+  const urlParams = new URLSearchParams(window.location.search);
+  const quickSetup = urlParams.get('backend');
+  if(quickSetup){ setApiBase(quickSetup); window.history.replaceState({}, '', window.location.pathname); }
+
+  // On a remote host (GitHub Pages etc) with no backend configured, show setup first
+  if(!isLocal() && !API_BASE){
+    show('login');
+    $('loginErr').innerHTML = '⚙ <b>First-time setup:</b> You need a running backend to use VOLTA Manager.<br><br>1. Run <span class="mono">node web/server.js</span> on your PC<br>2. Expose it with <span class="mono">npx cloudflared tunnel --url http://localhost:3000</span> (or ngrok)<br>3. Copy the public URL and paste it below<br><br><button class="btn sm" id="setupBtn" style="margin-top:8px">Open Settings ⚙</button>';
+    $('loginErr').style.display = 'block';
+    $('setupBtn').onclick = openSettings;
+    return;
+  }
+
   if(TOKEN){ try{ const { user } = await api('/api/me?token='+TOKEN); ME=user; afterLogin(); return; }
     catch{ TOKEN=null; localStorage.removeItem('volta_token'); } }
   show('login');
 })();
+
+function openSettings(){
+  $('modalBody').innerHTML = `
+    <h3>⚙ Connect to Backend</h3>
+    <div class="desc muted" style="font-size:12px;margin-bottom:12px">
+      Paste the public URL of your running <span class="mono">node web/server.js</span> server below.
+      <br><br>If you're using <b>cloudflared</b>:<br>
+      <span class="mono" style="font-size:11px">npx cloudflared tunnel --url http://localhost:3000</span><br><br>
+      If you're using <b>ngrok</b>:<br>
+      <span class="mono" style="font-size:11px">ngrok http 3000</span><br><br>
+      Copy the <span class="mono">https://...trycloudflare.com</span> or <span class="mono">https://...ngrok-free.app</span> URL and paste it here.
+    </div>
+    <input class="field" id="setBase" type="url" placeholder="https://your-tunnel-url.trycloudflare.com" value="${API_BASE}" style="margin-bottom:14px" />
+    <div class="ctrl">
+      <button class="btn sm" id="setSave">Save & Connect</button>
+      <button class="btn ghost sm" id="setTest">Test</button>
+    </div>
+    <div class="gres" id="setRes" style="margin-top:12px"></div>`;
+  $('modal').classList.remove('hidden');
+  $('setSave').onclick = () => {
+    setApiBase($('setBase').value);
+    $('setRes').textContent = 'Saved ✓ Reconnecting…';
+    checkBackend().then(()=>{ if(!$('warn').classList.contains('hidden')) return; $('modal').classList.add('hidden'); location.reload(); });
+  };
+  $('setTest').onclick = async () => {
+    try {
+      const r = await fetch(($('setBase').value||'').replace(/\/$/,'') + '/api/info', {headers:EXTRA_HEADERS, signal: AbortSignal.timeout(5000)});
+      if (!r.ok) throw new Error('bad status');
+      const d = await r.json();
+      $('setRes').textContent = 'Connected ✓ backend v' + d.version;
+    } catch { $('setRes').textContent = 'Could not reach that URL. Make sure node web/server.js is running and the tunnel is open.'; }
+  };
+}
 </script>
 </body>
 </html>
