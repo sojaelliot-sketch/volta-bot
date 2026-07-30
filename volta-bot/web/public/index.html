@@ -374,13 +374,12 @@ let TOKEN = localStorage.getItem('volta_token') || null;
 let ME = null;
 
 // ── BACKEND URL ────────────────────────────────────────────────────────────
-// The web backend (web/server.js) is hosted separately (tunnel / VPS), and its
-// public URL changes whenever a free tunnel is restarted. So we persist the
-// chosen URL in localStorage and let the manager edit it from Settings — the
-// hardcoded value below is only the initial default. This is what fixes the
-// "Leaderboard won't load" problem: pick the current backend URL in Settings.
+// If hosted on GitHub Pages (or any separate origin), the API lives on a
+// different server. Persist the chosen URL in localStorage; the hardcoded
+// value below is only the initial default.
 let API_BASE = (localStorage.getItem('volta_base') || "").trim();
 function apiBase(){ return API_BASE ? API_BASE.replace(/\/$/, '') : window.location.origin; }
+function isLocal(){ const h = window.location.hostname; return h === 'localhost' || h === '127.0.0.1'; }
 function setApiBase(url){
   API_BASE = (url || '').trim();
   if (API_BASE) localStorage.setItem('volta_base', API_BASE);
@@ -398,8 +397,8 @@ function show(view){
   if(view==='academyView') loadAcademy();
   if(view==='tournamentView') loadTournament();
   if(view==='hubView') loadHub();
-  if(view==='dash'){ startHeartbeat(); startChatPolling(); }
-  if(view==='chatView') startChatPolling();
+  if(view==='dash') startHeartbeat();
+  if(view==='chatView' || view==='dash') startChatPolling();
   if(view==='onlineView') loadOnline();
 }
 let mktTimer = null;
@@ -425,13 +424,16 @@ async function api(path, opts={}){
 // Warn the manager if their running backend lacks the new web features.
 async function checkBackend(){
   try{
-    const r = await fetch(apiBase() + '/api/info', {headers:EXTRA_HEADERS});
+    const r = await fetch(apiBase() + '/api/info', {headers:EXTRA_HEADERS, signal: AbortSignal.timeout(5000)});
     if(!r.ok) throw new Error('no info');
     const d = await r.json();
     if((d.version||0) < 2) showWarn('Your web backend is outdated — restart <span class="mono">node web/server.js</span> to unlock Shop &amp; Games.');
     else hideWarn();
   }catch{
-    showWarn('Could not reach the web backend, or it is outdated — restart <span class="mono">node web/server.js</span> to unlock Shop &amp; Games.');
+    const hint = isLocal()
+      ? 'Make sure <span class="mono">node web/server.js</span> is running.'
+      : 'Open <b>Settings</b> (⚙) and paste your backend URL (e.g. your ngrok or VPS address).';
+    showWarn('Could not reach the web backend. ' + hint);
   }
 }
 
@@ -691,7 +693,9 @@ async function loadChatMessages(){
   }catch{}
 }
 async function sendChat(){
-  const input = $('chatInput') || $('chatInput2');
+  // Use whichever input is currently visible
+  const chatView = !$('chatView').classList.contains('hidden');
+  const input = chatView ? $('chatInput2') : $('chatInput');
   const text = input?.value.trim();
   if(!text) return;
   input.value = '';
@@ -1225,13 +1229,18 @@ async function hlGuess(dir){
 $('settingsBtn').onclick = () => {
   $('modalBody').innerHTML = `
     <h3>⚙ Settings</h3>
-    <div class="desc muted" style="font-size:12px;margin-bottom:12px">The web backend runs on a separate URL (tunnel / VPS). If the Leaderboard or data won't load, paste your current backend URL here (e.g. your ngrok / VPS address). It's saved on this device.</div>
-    <input class="field" id="setBase" type="url" placeholder="https://your-backend-url" value="${API_BASE}" style="margin-bottom:14px" />
+    <div class="desc muted" style="font-size:12px;margin-bottom:12px">
+      ${isLocal()
+        ? 'You\'re running locally — the backend is auto-detected. No changes needed unless you\'re using a tunnel.'
+        : 'You\'re on a remote host (GitHub Pages, etc). Paste your backend URL below so the app can reach the API server.'}
+    </div>
+    <div class="desc muted" style="font-size:11px;margin-bottom:8px">Backend URL (leave blank to use same server):</div>
+    <input class="field" id="setBase" type="url" placeholder="e.g. https://your-ngrok-url.ngrok-free.dev" value="${API_BASE}" style="margin-bottom:14px" />
     <div class="ctrl">
       <button class="btn sm" id="setSave">Save</button>
       <button class="btn ghost sm" id="setTest">Test connection</button>
     </div>
-    <div class="gres" id="setRes" style="margin-top:12px">Saved to this device.</div>
+    <div class="gres" id="setRes" style="margin-top:12px"></div>
     <div class="sec-title" style="margin-top:20px"><h2>Data</h2></div>
     <div class="desc muted" style="font-size:12px;margin-bottom:10px">Download a snapshot of your manager profile & squad as JSON.</div>
     <button class="btn ghost sm" id="setExport">⬇ Export my data</button>`;

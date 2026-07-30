@@ -63,7 +63,7 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const PLAYERS_FILE = path.join(DATA_DIR, 'players.json');
 const MATCHES_FILE = path.join(DATA_DIR, 'matches.json');
-const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
+const SESSIONS_FILE = path.join(DATA_DIR, '.web_sessions.json');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const PORT = process.env.PORT || 3000;
 
