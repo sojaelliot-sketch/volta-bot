@@ -125,6 +125,15 @@ const handlers = {
   sellstadium: () => require('./stadium'),
   pk: () => require('./stadium'),
   hustle: () => require('./hustle'),
+  rivalry: () => require('./rivalry'),
+  trade: () => require('./trade'),
+  press: () => require('./press'),
+  curse: () => require('./curse'),
+  chant: () => require('./chant'),
+  shield: () => require('./shield'),
+  weeklyawards: () => require('./weeklyawards'),
+  formcheck: () => require('./formcheck'),
+  retire: () => require('./retire'),
 };
 
 const PUBLIC_COMMANDS = new Set(['start', 'register', 'help', 'menu', 'top10', 'leaderboard', 'lb', 'invite']);

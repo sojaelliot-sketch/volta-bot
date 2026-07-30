@@ -885,6 +885,34 @@ async function finishPvP(s) {
   report += timeline
     ? `📋 *MATCH LOG*\n${timeline}\n`
     : `📋 *MATCH LOG*\nNo goals — a cagey ${s.homeScore}–${s.awayScore} draw.\n`;
+
+  // ── COMEBACK DETECTION ──
+  let comebackTeam = null;
+  if (homeWon && s.homeWasBehind) {
+    comebackTeam = s.homeName;
+  } else if (winnerId === s.awayId && s.awayWasBehind) {
+    comebackTeam = s.awayName;
+  }
+  if (comebackTeam) {
+    report += `\n🔥 *COMEBACK OF THE WEEK CANDIDATE!* ${comebackTeam} came from behind to win!\n`;
+  }
+
+  // ── HATTRICK DETECTION ──
+  const hattrickPlayers = [];
+  for (const [pid, stats] of Object.entries(s.scorerStats || {})) {
+    if (stats.goals >= 3) {
+      hattrickPlayers.push(stats);
+      // Award hattrick badge on the card permanently
+      const p = Player.getById(pid);
+      if (p && !p.hattrickBadge) {
+        Player.update(pid, { hattrickBadge: true });
+      }
+    }
+  }
+  for (const hp of hattrickPlayers) {
+    report += `\n⚽⚽⚽ *HATTRICK!* ${hp.name} scores ${hp.goals} goals! 🎩\n`;
+  }
+
   report += `\n💲 +${homeReward} (${s.homeName}) | +${awayReward} (${s.awayName})\n`;
   if (mvp) report += `⭐ MVP: *${mvp.name}*${mvpBonus ? ` (+${mvpBonus})` : ''}\n`;
   report += `${resultTxt}\n━━━━━━━━━━━━━━━━━━━━━━━\n${BRAND}`;
@@ -1146,6 +1174,16 @@ async function endMatch(session) {
     `📈 MMR ${mmrDelta >= 0 ? '+' : ''}${mmrDelta}`,
     `🏆 ${newRank}`,
   ];
+  if (homeWon && homeWasBehind) {
+    rewards.push(`🔥 *COMEBACK OF THE WEEK CANDIDATE!* ${homeName} came from behind to win!`);
+  }
+  for (const [pid, st] of Object.entries(statsMap || {})) {
+    if (st.goals >= 3) {
+      rewards.push(`⚽⚽⚽ *HATTRICK!* ${st.name} scores ${st.goals} goals!`);
+      const pp = Player.getById(pid);
+      if (pp && !pp.hattrickBadge) Player.update(pid, { hattrickBadge: true });
+    }
+  }
   if (homeWon && homeScorer?.id) {
     const mvp = Player.getById(homeScorer.id);
     rewards.push(`⭐ MVP: ${mvp ? Player.displayName(mvp) : homeScorer.player} (+${ECONOMY.MVP_BONUS})`);

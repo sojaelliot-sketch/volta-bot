@@ -12,10 +12,12 @@ const MENU = `⚽ *VOLTA* — ${BRAND}
 
 *⚔️ MATCHES*
 !play  !match  !challenge  !accept  !pk  !forfeit  !sub
+!rivalry  !formcheck  !press  !curse
 
 *👥 SQUAD*
 !squad  !card  !flex  !condition  !autosquad  !swap  !rename
 !reserve  !reserve out  !preserves  !squads  !buysquad  !switchsquad
+!trade  !shield  !chant  !retire
 
 *🎰 GRIND*
 !slot  !coinflip  !highlow  !wallet  !give  !dash  !daily  !streak  !hustle
@@ -40,6 +42,7 @@ const MENU = `⚽ *VOLTA* — ${BRAND}
 
 *📊 RANKS*
 !leaderboard  !top10  !playerlb  !profile  !pong
+!weeklyawards
 
 *🔧 OTHER*
 !tutorial  !explain  !bracket  !password
