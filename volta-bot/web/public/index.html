@@ -377,8 +377,9 @@ let ME = null;
 // If hosted on GitHub Pages (or any separate origin), the API lives on a
 // different server. Persist the chosen URL in localStorage; the hardcoded
 // value below is only the initial default.
+const VOLTA_TUNNEL = 'https://california-quiz-stretch-trembl.trycloudflare.com';
 let API_BASE = (localStorage.getItem('volta_base') || "").trim();
-function apiBase(){ return API_BASE ? API_BASE.replace(/\/$/, '') : window.location.origin; }
+function apiBase(){ if(API_BASE) return API_BASE.replace(/\/$/, ''); if(isLocal()) return window.location.origin; return VOLTA_TUNNEL; }
 function isLocal(){ const h = window.location.hostname; return h === 'localhost' || h === '127.0.0.1'; }
 function setApiBase(url){
   API_BASE = (url || '').trim();
