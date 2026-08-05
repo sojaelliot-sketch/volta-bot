@@ -8,7 +8,7 @@ const MENU = `⚽ *VOLTA* — ${BRAND}
 !start  !register  !invite  !help
 
 *🌐 WEB*
-!password  →  https://sojaelliot-sketch.github.io/volta-bot/
+!password  →  https://voltabot1.netlify.app
 
 *⚔️ MATCHES*
 !play  !match  !challenge  !accept  !pk  !forfeit  !sub
