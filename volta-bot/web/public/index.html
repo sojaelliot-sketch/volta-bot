@@ -377,7 +377,7 @@ let ME = null;
 // If hosted on GitHub Pages (or any separate origin), the API lives on a
 // different server. Persist the chosen URL in localStorage; the hardcoded
 // value below is only the initial default.
-const VOLTA_TUNNEL = 'https://california-quiz-stretch-trembl.trycloudflare.com';
+const VOLTA_TUNNEL = 'https://motors-honest-coal-stood.trycloudflare.com';
 let API_BASE = (localStorage.getItem('volta_base') || "").trim();
 function apiBase(){ if(API_BASE) return API_BASE.replace(/\/$/, ''); if(isLocal()) return window.location.origin; return VOLTA_TUNNEL; }
 function isLocal(){ const h = window.location.hostname; return h === 'localhost' || h === '127.0.0.1'; }
