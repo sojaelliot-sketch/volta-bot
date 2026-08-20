@@ -50,8 +50,8 @@ async function main() {
   User.create(U1, 'Alice'); grantStarterSquad(U1); User.update(U1, { currency: 100000 });
   User.create(U2, 'Bob'); grantStarterSquad(U2); User.update(U2, { currency: 100000 });
   // owner via fromMe
+  User.create(OWNER, 'Owner'); grantStarterSquad(OWNER); User.update(OWNER, { registered: true, currency: 100000 });
   await run('start(owner)', '!start', OWNER);
-  User.update(OWNER, { currency: 100000 });
   const ownerId = User.getByWhatsappId(OWNER).startingXI[0].slice(0, 6);
   const u1id = User.getByWhatsappId(U1).startingXI[0].slice(0, 6);
 

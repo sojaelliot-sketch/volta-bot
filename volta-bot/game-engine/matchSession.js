@@ -27,6 +27,211 @@ const INTERCEPT_LINES = [
   '🔄 *PICKED OFF!* A perfectly timed tackle kills the move before it starts!',
 ];
 
+// ── FAN CHANT SYSTEM ─────────────────────────────────────────────────────
+// Looks up a user's custom chant and wraps it with atmosphere based on the
+// match moment.  For tournament/competition finals the output is extra
+// spectacular with tifo, poster, and crowd descriptions.
+
+const CHANT_MOMENTS = {
+  goal: {
+    generic: [
+      '📣 The crowd ERUPTS! Fans leap to their feet and the stadium ROARS:',
+      '📣 Waves of sound crash down from the stands — the fans are SINGING:',
+      '📣 The supporters section EXPLODES — scarves raised high, voices united:',
+      '📣 A wall of sound engulfs the pitch — the faithful are ON THEIR FEET:',
+      '📣 The net RIPPLES and the stands DETONATE — pure, raw, primal joy:',
+      '📣 A GOAL! The stadium becomes a living, breathing instrument of NOISE:',
+      '📣 The keeper is BEATEN and the crowd becomes a TSUNAMI of sound:',
+      '📣 Sixty thousand voices become ONE — the chant shakes the very foundations:',
+      '📣 The scoreboard changes and the earth TREMBLES beneath the stands:',
+      '📣 He BURIES it! The fans lose every last shred of composure:',
+      '📣 The ball hits the back of the net and a WAVE of sound crashes over the pitch:',
+      '📣 GOOOAAAL! The ultras section becomes a SWARM of jumping, screaming bodies:',
+      '📣 The net ripples and a primal ROAR tears through the stadium like thunder:',
+      '📣 That is GORGEOUS! The fans are already composing the song in their heads:',
+      '📣 Absolute PANDEMONIUM — grown men are hugging strangers, tears streaming:',
+      '📣 The stadium SHAKES on its foundations — the fans have gone NUCLEAR:',
+      '📣 One touch, two touch, BANG — the crowd DETONATES like a volcano:',
+      '📣 The keeper had NO CHANCE — the supporters section is in absolute ECSTASY:',
+      '📣 The ball screams into the top corner and the stadium ERUPTS into pure bedlam:',
+      '📣 The crowd rises as a single organism — a WALL of sound, fury, and passion:',
+      '📣 That goal was BEAUTIFUL and the fans know it — the noise is DEAFENING:',
+      '📣 The net bulges and the stadium becomes a CAULDRON of raw emotion:',
+      '📣 GOAL! The supporters grab each other, screaming, jumping, CRYING with joy:',
+      '📣 The stadium lights seem to BRIGHTEN as the fans ignite with pure electricity:',
+      '📣 The chant starts in one corner and SPREADS like wildfire across every stand:',
+    ],
+  },
+  comeback: {
+    generic: [
+      '📣 The fans are UNLEASHING their fury — the comeback anthem shakes the walls:',
+      '📣 Every soul in the stadium is SCREAMING — belief has turned to FIRE:',
+      '📣 The supporters section is a VOLCANO — raw, relentless, unbreakable:',
+      '📣 They were DEAD and buried — now the fans are ROARING them back to life:',
+      '📣 From the depths of despair to the PEAK of ecstasy — the fans are WILD:',
+      '📣 The stadium is TREMBLING — this is a resurrection, this is FOOTBALL:',
+      '📣 Two goals down? The fans DON\'T CARE — they\'re singing LOUDER than ever:',
+      '📣 The comeback anthem starts as a WHISPER and builds to a ROAR:',
+      '📣 They were losing — now the stands are SHAKING with primal energy:',
+      '📣 The fans grab the players by the SOUL and LIFT them with their voices:',
+      '📣 Nobody believed — except the FANS. And they NEVER stopped singing:',
+      '📣 The stadium has become a WARZONE of noise — the comeback is ON:',
+      '📣 From silence to SCREAMING — the fans have turned this stadium inside out:',
+      '📣 The underdog is BARKING and the fans are HOWLING at the moon:',
+      '📣 This is MADNESS — beautiful, glorious, UNDENIABLE madness:',
+    ],
+  },
+  penalty: {
+    generic: [
+      '📣 The fans hold their breath... then ERUPT into a defiant chant:',
+      '📣 A hush falls, then THUNDER — the supporters will their heroes on:',
+      '📣 The stands are TREMBLING with anticipation — every voice is a weapon:',
+      '📣 The taker steps up — the fans SCREAM the chant like a battle hymn:',
+      '📣 Twelve yards. One moment. The fans pour EVERYTHING into one chant:',
+      '📣 The stadium goes SILENT... then the chant BUILDS like a tidal wave:',
+      '📣 Every heart stops. Every breath is held. Then the chant EXPLODES:',
+      '📣 The keeper bounces on his line — the fans SING him into the zone:',
+      '📣 The walk from the halfway line feels like a MILE — the fans carry him:',
+      '📣 Penalties are a LOTTERY — but the fans make it feel like DESTINY:',
+      '📣 The spot-kick taker closes his eyes and hears the CHANT — it\'s enough:',
+      '📣 The fans form a WALL OF SOUND behind the goal — the keeper feeds on it:',
+      '📣 This is where LEGENDS are made — and the fans are writing the script:',
+      '📣 The stadium holds its BREATH — one kick, one chance, one CHANT:',
+      '📣 The taker places the ball — the fans launch their anthem like a MISSILE:',
+    ],
+  },
+  hattrick: {
+    generic: [
+      '📣 The stadium is in RAPTURES — the fans are singing the hero\'s name:',
+      '📣 Three goals, one LEGEND — the supporters are chanting for eternity:',
+      '📣 The crowd is LOSING THEIR MINDS — this is a moment for the ages:',
+      '📣 A HAT-TRICK! The fans are WORSHIPPING at the altar of brilliance:',
+      '📣 Three times he\'s FOUND the net — the fans are calling him IMMORTAL:',
+      '📣 The hat-trick hero takes a BOW — the stadium gives him a STANDING OVATION:',
+      '📣 He\'s done it THREE TIMES — the fans are writing songs that will last forever:',
+      '📣 The crowd is CHANTING his name — this is a performance for the AGES:',
+      '📣 Three goals of PURE MAGIC — the supporters section has lost all control:',
+      '📣 A standing ovation from EVERY corner of the stadium — the hero\'s name echoes:',
+      '📣 The hat-trick ball is his — the fans are giving him the WORLD right now:',
+      '📣 They\'ll talk about this PERFORMANCE for generations — the fans KNOW:',
+      '📣 The stadium is SCREAMING one name — three goals, one LEGEND, eternal glory:',
+      '📣 The ultras have found their NEW GOD — and his name is written in goals:',
+      '📣 Three strikes of GENIUS — the fans are writing his name in the stars:',
+    ],
+  },
+  fulltime: {
+    generic: [
+      '📣 The fans pour their hearts into one final, deafening chant:',
+      '📣 As the whistle blows, the supporters rise as one — voices united:',
+      '📣 The stadium echoes with the sound of a million emotions:',
+      '📣 The final whistle means WAR is over — the fans SING through tears:',
+      '📣 Every fan in the stadium gives EVERYTHING they have left — one last roar:',
+      '📣 The players walk off to a THUNDEROUS ovation — the chant echoes forever:',
+      '📣 The ninety minutes are DONE — but the fans\' voices will ECHO for days:',
+      '📣 The whistle blows and the stadium becomes a OCEAN of singing and emotion:',
+      '📣 Win, lose, or draw — the fans ALWAYS have the last word:',
+      '📣 The players look up at the stands and see a WALL of love and noise:',
+      '📣 The final note rings out across the stadium — this is what it\'s ALL about:',
+      '📣 The fans stand as one — a single heartbeat, a single VOICE:',
+      '📣 The stadium slowly empties but the CHANT lives on — forever:',
+      '📣 As the floodlights dim, the fans\' voices carry into the night:',
+      '📣 The players salute the fans — the fans salute BACK with everything they have:',
+    ],
+  },
+};
+
+const CHANT_FINALS_EXTRAS = [
+  '🎨 Fans in the north stand unfurl a MASSIVE TIFO — a giant mosaic of the team crest spanning the entire end.',
+  '🎨 A sea of flags ripples across the south stand as the ultras hoist a banner reading "FOREVER Volta".',
+  '🎨 Flares paint the sky crimson and gold — the tifo display is SPECTACULAR tonight.',
+  '🎨 Thousands hold up coloured cards, forming a giant portrait of the manager on the far side.',
+  '🎨 The faithful have built a WALL OF TIFO — a giant fist pumping the air, symbolising unbreakable belief.',
+  '🎨 A choreographed light show from the stands creates a river of team colours flowing to the pitch.',
+  '🎨 The ultras section unveils a massive poster — a player sliding on their knees with the words "LEGENDS ARE FORGED HERE".',
+  '🎨 Confetti cannons FIRE from the stands as fans hold up a giant banner: "THIS IS OUR MOMENT".',
+  '🎨 A GIANT flag the size of a house is passed across the entire lower tier — the stadium becomes a single heartbeat.',
+  '🎨 The supporters section transforms into a MOSAIC of team colours — ten thousand cards held in perfect unison.',
+  '🎨 Red and gold SMOKE BOMBS erupt from the ultras end — the stadium looks like it\'s on FIRE.',
+  '🎨 Fans have built a TIFO of the trophy being lifted — it spans THREE SECTIONS of the stand.',
+  '🎨 The choreography is INSANE — every fan holds a card, forming a giant eagle spreading its wings.',
+  '🎨 Pyrotechnics LIGHT UP the night sky as the ultras unveil a banner: "BORN TO FIGHT, BORN TO WIN".',
+  '🎨 A WAVE of scarves ripples through the entire stadium — red, gold, white, ariver of colour.',
+  '🎨 The tifo shows a FIST clutching a football — the message is clear: WE NEVER SURRENDER.',
+  '🎨 Fans hold up MIRRORS that catch the floodlights — the entire stand SHIMMERS like a diamond.',
+  '🎨 The ultras have brought DRUMS — the rhythmic pounding matches every heartbeat in the stadium.',
+  '🎨 A giant MURAL is unfurled showing every trophy ever won — this is OUR history.',
+  '🎨 The south stand becomes a SEA OF FLAMES — pyro, flares, and pure raw passion.',
+  '🎨 Fans hold up LED lights that pulse in time with the chant — the stand becomes a LIVING BEING.',
+  '🎨 The tifo reveals a GIGANTIC crest — each piece held by a single fan, united as one.',
+  '🎨 White confetti FALLS like snow across the pitch — the final feels like a DREAM.',
+  '🎨 The ultras section is a WALL OF NOISE AND COLOUR — the atmosphere is ELECTRIC.',
+  '🎨 Every seat in the stadium has a COLOURED CARD — the aerial view is BREATHTAKING.',
+];
+
+const CHANT_POSTER_LINES = [
+  '📝 Fans hold up a giant poster reading: _"',
+  '📝 A banner stretches across the stand: _"',
+  '📝 The crowd holds aloft a massive sign: _"',
+  '📝 Hand-painted tifo reveals the words: _"',
+  '📝 A sea of placards rise in unison, each bearing the words: _"',
+  '📝 The ultras unveil a hand-stitched masterpiece — the banner reads: _"',
+  '📝 Kids in the front row hoist a hand-painted sign: _"',
+  '📝 A CRANE lifts a GIANT banner from the upper tier — it reads: _"',
+  '📝 The supporters section unfurls a scroll that stretches 50 metres: _"',
+  '📝 Neon letters glow in the darkness of the stand: _"',
+  '📝 The entire end holds up individual letters that spell out: _"',
+  '📝 A fan on someone\'s shoulders holds the sign HIGH above the crowd: _"',
+  '📝 The tifo artists have outdone themselves — a giant mural reads: _"',
+  '📝 Thousands of phone torches light up a message in the dark: _"',
+  '📝 The captain\'s face is painted across the stand with the words: _"',
+];
+
+/**
+ * Build a chant atmosphere line for a given user and moment.
+ *
+ * @param {string} userId       WhatsApp JID of the team manager
+ * @param {string} moment       One of: goal, comeback, penalty, hattrick, fulltime
+ * @param {object} opts
+ * @param {boolean} opts.isFinal      True if this is a tournament/comp final
+ * @param {string}  opts.scorerName   Name of the scorer (for hattrick/goal)
+ * @param {string}  opts.teamName     Name of the team
+ * @returns {string} Formatted chant line, or empty string if user has no chant
+ */
+function getChantLine(userId, moment, opts = {}) {
+  const user = User.getByWhatsappId(userId);
+  if (!user || !user.chant) return '';
+
+  const chant = user.chant;
+  const isFinal = !!opts.isFinal;
+  const pool = (CHANT_MOMENTS[moment] && CHANT_MOMENTS[moment].generic) || CHANT_MOMENTS.goal.generic;
+  const intro = pick(pool);
+
+  // For finals, add spectacular atmosphere extras
+  let extra = '';
+  if (isFinal) {
+    extra = '\n' + pick(CHANT_FINALS_EXTRAS);
+  }
+
+  // Build the chant line with poster/banner integration for finals
+  let posterLine = '';
+  if (isFinal && Math.random() < 0.6) {
+    const posterIntro = pick(CHANT_POSTER_LINES);
+    posterLine = '\n' + posterIntro + chant + '_."';
+  }
+
+  return `${intro}\n_"${chant}"_${extra}${posterLine}`;
+}
+
+/**
+ * Get a short chant burst (just the chant text wrapped in atmosphere) for
+ * quick moments like goals where we don't want a huge block of text.
+ */
+function getChantBurst(userId) {
+  const user = User.getByWhatsappId(userId);
+  if (!user || !user.chant) return '';
+  return `📣 _"${user.chant}"_`;
+}
+
 const activeSessions = new Map();
 const lockedChats = new Map();   // chatJid -> { matchId, participants: [id,id] }
 
@@ -736,6 +941,13 @@ const ap = Math.round(engine.calcActionPower(player, 'shoot', s[`${attackerSide}
   const scoreboard = `⏱️ ${fm}'  ${s.homeName} ${s.homeScore}–${s.awayScore} ${s.awayName}`;
   await broadcast(s, `${scoreboard}\n${line}${hype}${drama}`.trim());
 
+  // Fan chant on goal
+  if (isGoal) {
+    const scorerId = attackerSide === 'home' ? s.homeId : s.awayId;
+    const chantLine = getChantLine(scorerId, 'goal', { isFinal: s.isTournament, scorerName: Player.displayName(player) || player.name, teamName: attackerSide === 'home' ? s.homeName : s.awayName });
+    if (chantLine) await broadcast(s, chantLine);
+  }
+
   // Injury roll in interactive play.
   if (Math.random() < INJURY.CHANCE_PER_CHANCE) {
     const defSquad = defenderSide === 'home' ? s.homeSquad : s.awaySquad;
@@ -790,10 +1002,17 @@ async function finishPvP(s) {
     await broadcast(s,
       `⚽ *DRAW* — going to PENALTIES! 🔥\n${s.homeName} ${pkResult.homePk}–${pkResult.awayPk} ${s.awayName}\n` +
       `🏆 *${pkResult.winnerId === s.homeId ? s.homeName : s.awayName}* win on penalties!`);
+    // Fan chants on penalties
+    const pkChantHome = getChantLine(s.homeId, 'penalty', { isFinal: s.isTournament, teamName: s.homeName });
+    const pkChantAway = getChantLine(s.awayId, 'penalty', { isFinal: s.isTournament, teamName: s.awayName });
+    if (pkChantHome) await broadcast(s, pkChantHome);
+    if (pkChantAway && pkChantHome !== pkChantAway) await broadcast(s, pkChantAway);
   }
 
-  const isDraw = !pkResult && s.homeScore === s.awayScore;
-  const winnerId = !pkResult ? null : pkResult.winnerId;
+  const winnerId = s.homeScore > s.awayScore ? s.homeId
+    : s.awayScore > s.homeScore ? s.awayId
+    : (pkResult ? pkResult.winnerId : null);
+  const isDraw = !winnerId;
   const homeWon = winnerId === s.homeId;
 
   const homeReward = homeWon ? ECONOMY.WIN_REWARD : isDraw ? ECONOMY.DRAW_REWARD : ECONOMY.LOSS_REWARD;
@@ -817,6 +1036,15 @@ async function finishPvP(s) {
   const newRank = calcRank(hu ? hu.mmr : 1000);
   if (hu && newRank !== hu.rank) User.update(s.homeId, { rank: newRank });
 
+  // ── LEAGUE: Record match result for both players ──
+  const League = require('../models/League');
+  League.recordMatch(s.homeId, {
+    goalsFor: s.homeScore,
+    goalsAgainst: s.awayScore,
+    isWin: homeWon,
+    isDraw: isDraw,
+  });
+
   // The away side only gets rewards/rank when it's a real opponent (PvP).
   // In a vs-AI match awayId is the literal 'AI', so we must not write a fake
   // user record for it.
@@ -836,6 +1064,14 @@ async function finishPvP(s) {
     const newRankA = calcRank(au ? au.mmr : 1000);
     if (au && newRankA !== au.rank) User.update(s.awayId, { rank: newRankA });
     tourney.resolveByResult(s.homeId, s.awayId, winnerId);
+
+    // ── LEAGUE: Record away player result ──
+    League.recordMatch(s.awayId, {
+      goalsFor: s.awayScore,
+      goalsAgainst: s.homeScore,
+      isWin: winnerId === s.awayId,
+      isDraw: isDraw,
+    });
   }
 
   // ── BOUNTY: if the loser had a bounty, transfer it to the winner ──
@@ -895,6 +1131,10 @@ async function finishPvP(s) {
   }
   if (comebackTeam) {
     report += `\n🔥 *COMEBACK OF THE WEEK CANDIDATE!* ${comebackTeam} came from behind to win!\n`;
+    // Fan chant on comeback
+    const comebackId = comebackTeam === s.homeName ? s.homeId : s.awayId;
+    const comebackChant = getChantLine(comebackId, 'comeback', { isFinal: s.isTournament, teamName: comebackTeam });
+    if (comebackChant) report += comebackChant + '\n';
   }
 
   // ── HATTRICK DETECTION ──
@@ -911,11 +1151,21 @@ async function finishPvP(s) {
   }
   for (const hp of hattrickPlayers) {
     report += `\n⚽⚽⚽ *HATTRICK!* ${hp.name} scores ${hp.goals} goals! 🎩\n`;
+    // Fan chant on hattrick
+    const htId = hp.team === 'home' ? s.homeId : s.awayId;
+    const htChant = getChantLine(htId, 'hattrick', { isFinal: s.isTournament, scorerName: hp.name, teamName: hp.team === 'home' ? s.homeName : s.awayName });
+    if (htChant) report += htChant + '\n';
   }
 
   report += `\n💲 +${homeReward} (${s.homeName}) | +${awayReward} (${s.awayName})\n`;
   if (mvp) report += `⭐ MVP: *${mvp.name}*${mvpBonus ? ` (+${mvpBonus})` : ''}\n`;
   report += `${resultTxt}\n━━━━━━━━━━━━━━━━━━━━━━━\n${BRAND}`;
+
+  // Fan chant at full time
+  const ftChantHome = getChantLine(s.homeId, 'fulltime', { isFinal: s.isTournament, teamName: s.homeName });
+  const ftChantAway = getChantLine(s.awayId, 'fulltime', { isFinal: s.isTournament, teamName: s.awayName });
+  if (ftChantHome) report += '\n' + ftChantHome;
+  if (ftChantAway && ftChantHome !== ftChantAway) report += '\n' + ftChantAway;
 
   await broadcast(s, report);
 
@@ -1055,6 +1305,10 @@ function simulateChunk(session, count) {
     // never repeats within the match.
     if (isGoal) {
       lines.push(comm.genZFlow('HYPE', { team }));
+      // Fan chant on goal (simulated)
+      const scorerId = team === homeName ? session.homeId : session.awayId;
+      const chantBurst = getChantBurst(scorerId);
+      if (chantBurst) lines.push(chantBurst);
     } else if (Math.random() < 0.35) {
       lines.push(comm.genZFlow(Math.random() < 0.5 ? 'BUILDUP' : 'PRESSURE', { team, player: attacker.displayName || attacker.name }));
     }
@@ -1073,6 +1327,9 @@ async function endMatch(session) {
     await sendText(sock, chatJid,
       `⚽ *DRAW* — going to PENALTIES! 🔥\n${homeName} ${pkResult.homePk}–${pkResult.awayPk} ${awayName}\n` +
       `🏆 *${pkResult.winnerId === homeId ? homeName : awayName}* win on penalties!`);
+    // Fan chant on penalties (AI match)
+    const pkChant = getChantBurst(homeId);
+    if (pkChant) await sendText(sock, chatJid, pkChant);
     if (awayId) await sendText(sock, awayId,
       `⚽ *DRAW* — PENALTIES! 🔥\n${awayName} ${pkResult.awayPk}–${pkResult.homePk} ${homeName}\n` +
       `🏆 *${pkResult.winnerId === awayId ? awayName : homeName}* win on penalties!`);
@@ -1108,6 +1365,15 @@ async function endMatch(session) {
     mmr: (h.mmr || 1000) + mmrDelta,
     totalGoals: (h.totalGoals || 0) + homeScore,
     winStreak: homeWon ? (h.winStreak || 0) + 1 : 0,
+  });
+
+  // ── LEAGUE: Record AI match result for home player ──
+  const League = require('../models/League');
+  League.recordMatch(homeId, {
+    goalsFor: homeScore,
+    goalsAgainst: awayScore,
+    isWin: homeWon,
+    isDraw: isDraw,
   });
 
   // Detect a comeback: the home side was trailing at any point during the match.
@@ -1176,10 +1442,16 @@ async function endMatch(session) {
   ];
   if (homeWon && homeWasBehind) {
     rewards.push(`🔥 *COMEBACK OF THE WEEK CANDIDATE!* ${homeName} came from behind to win!`);
+    // Fan chant on comeback (AI match)
+    const comebackChant = getChantBurst(homeId);
+    if (comebackChant) rewards.push(comebackChant);
   }
   for (const [pid, st] of Object.entries(statsMap || {})) {
     if (st.goals >= 3) {
       rewards.push(`⚽⚽⚽ *HATTRICK!* ${st.name} scores ${st.goals} goals!`);
+      // Fan chant on hattrick (AI match)
+      const htChant = getChantBurst(homeId);
+      if (htChant) rewards.push(htChant);
       const pp = Player.getById(pid);
       if (pp && !pp.hattrickBadge) Player.update(pid, { hattrickBadge: true });
     }
@@ -1195,6 +1467,10 @@ async function endMatch(session) {
   }
   rewards.push(`━━━━━━━━━━━━━━━━━━━━━━━━`);
   rewards.push(`*!play* to run it back.`);
+
+  // Fan chant at full time (AI match)
+  const ftChant = getChantBurst(homeId);
+  if (ftChant) rewards.push(ftChant);
 
   if (newRank !== updatedUser.rank) {
     User.update(homeId, { rank: newRank });
@@ -1236,6 +1512,15 @@ async function endMatch(session) {
       mmr: (a.mmr || 1000) + awayMmr,
       totalGoals: (a.totalGoals || 0) + awayScore,
     });
+
+    // ── LEAGUE: Record away player result (PvP) ──
+    League.recordMatch(awayId, {
+      goalsFor: awayScore,
+      goalsAgainst: homeScore,
+      isWin: awayWon,
+      isDraw: isDraw,
+    });
+
     const awayScorer = goalScorers.find(g => g.team === 'away');
     if (awayWon && awayScorer?.id) {
       const mvp = Player.getById(awayScorer.id);
