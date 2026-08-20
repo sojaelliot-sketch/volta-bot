@@ -6,10 +6,9 @@ const {
   default: makeWASocket,
   useMultiFileAuthState,
   DisconnectReason,
+  fetchLatestBaileysVersion,
   Browsers,
 } = require('@whiskeysockets/baileys');
-const baileys = require('@whiskeysockets/baileys');
-const { resolveVersion } = require('./utils/waVersion');
 const { Boom } = require('@hapi/boom');
 const qrcode = require('qrcode-terminal');
 const pino = require('pino');
@@ -136,7 +135,8 @@ let socketId = 0;
 
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
-  const { version, source } = await resolveVersion(baileys, (m) => console.log(`[VOLTA] ${m}`));
+  const { version, isLatest } = await fetchLatestBaileysVersion();
+  console.log(`[VOLTA] Using WA v${version.join('.')}, isLatest: ${isLatest}`);
 
   const registered = !!state.creds.registered;
   const pairNumber = registered ? null : await resolvePairing();
