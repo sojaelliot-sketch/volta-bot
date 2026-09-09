@@ -133,13 +133,85 @@ async function resolvePairing() {
 let pairingRequested = false;
 let reconnectAttempts = 0;
 let socketId = 0;
+let cachedPairNumber = null;
+let reconnectTimer = null;
+let reconnecting = false;
+let stableSince = 0;
+let fatalStop = false;
+
+const MAX_RECONNECT_ATTEMPTS = 12;
+// A connection must survive this long before we treat it as healthy and clear
+// the backoff. Without it, a socket that opens and dies a second later resets
+// the counter every time and the "exponential" backoff never grows.
+const STABLE_MS = 60 * 1000;
+
+/**
+ * Fully dispose of a socket.
+ *
+ * THIS is what caused the reconnect loop. startBot() built a new socket on every
+ * disconnect but never shut the old one down — the `myId !== socketId` guard only
+ * stopped us HANDLING its events. The old WebSocket stayed open, kept its
+ * keepalive timers running, and kept trying to reconnect on its own. After a few
+ * cycles several sockets were live against the same account at once, so WhatsApp
+ * started closing them with 440 (replaced by another connection), which triggered
+ * another reconnect, which created another socket. The bot fought itself and the
+ * only way out was killing the process.
+ */
+function teardownSocket(sock) {
+  if (!sock) return;
+  try { sock.ev.removeAllListeners('connection.update'); } catch {}
+  try { sock.ev.removeAllListeners('messages.upsert'); } catch {}
+  try { sock.ev.removeAllListeners('creds.update'); } catch {}
+  try { sock.end(undefined); } catch {}
+  try { if (sock.ws && typeof sock.ws.close === 'function') sock.ws.close(); } catch {}
+}
+
+/** Schedule exactly one reconnect. Repeat calls while one is pending are ignored. */
+function scheduleReconnect(delayMs, why) {
+  if (fatalStop) return;
+  if (reconnecting) return;
+  reconnecting = true;
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  console.log(`[VOLTA] ${why} Reconnecting in ${Math.round(delayMs / 1000)}s (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})…`);
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    startBot()
+      .catch((e) => console.log('[VOLTA] reconnect failed:', e && e.message))
+      .finally(() => { reconnecting = false; });
+  }, delayMs);
+}
+
+/**
+ * A pairing attempt must start from a clean auth folder. A half-linked session
+ * (files present, creds.registered === false) makes WhatsApp reject the code.
+ */
+function sessionIsDirty(dir) {
+  const fs = require('fs');
+  try {
+    if (!fs.existsSync(dir)) return false;
+    const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json'));
+    if (files.length === 0) return false;
+    const credsPath = require('path').join(dir, 'creds.json');
+    if (!fs.existsSync(credsPath)) return files.length > 0;
+    const creds = JSON.parse(fs.readFileSync(credsPath, 'utf8'));
+    return !creds.registered;
+  } catch { return false; }
+}
 
 async function startBot() {
+  if (sessionIsDirty(SESSION_DIR)) {
+    console.log('[VOLTA] ⚠️  The sessions/ folder holds a half-linked session (registered: false).');
+    console.log('    WhatsApp will reject a pairing code against it. Clear it first:');
+    console.log(`      rm -rf ${SESSION_DIR}      (Windows:  rmdir /s /q sessions)`);
+    console.log('    Then start again.');
+  }
+
   const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
   const { version, source } = await resolveVersion(baileys, (m) => console.log(`[VOLTA] ${m}`));
 
   const registered = !!state.creds.registered;
-  const pairNumber = registered ? null : await resolvePairing();
+  const pairNumber = registered ? null : (cachedPairNumber || await resolvePairing());
+  if (pairNumber) cachedPairNumber = pairNumber;
   const usePairing = !!pairNumber;
 
   if (!registered) {
@@ -148,35 +220,45 @@ async function startBot() {
       : '[VOLTA] Login method: QR code  —  use "npm start -- --pair" for a code instead');
   }
 
+  // Kill the previous socket before opening another one.
+  if (activeSock) {
+    teardownSocket(activeSock);
+    activeSock = null;
+  }
+
   const myId = ++socketId;
 
   const sock = makeWASocket({
     version,
     auth: state,
     printQRInTerminal: false,
-    // Use canonical browser label — non-canonical labels (e.g. "Chrome" alone)
-    // cause WhatsApp to reject the pairing handshake with 400 bad-request.
-    // Browsers.macOS uses "Chrome (Mac OS)" which is accepted for pairing.
-    browser: Browsers.macOS('Desktop'),
+    // Browsers.macOS('Desktop') resolves to ["Mac OS","Desktop","14.4.1"] — "Desktop"
+    // is not a browser name, and WhatsApp will issue a code that never reaches the
+    // phone. Ubuntu/Chrome is the combination that reliably pairs.
+    browser: Browsers.ubuntu('Chrome'),
     logger: pino({ level: 'silent' }),
     syncFullHistory: false,
     markOnlineOnConnect: false,
     generateHighQualityLinkPreview: false,
+    // Pairing sends an iq that can outlive the default query timeout and abort
+    // the handshake with 428/408. Disabling the timeout is the documented fix.
+    defaultQueryTimeoutMs: undefined,
+    qrTimeout: undefined,
+    connectTimeoutMs: 60_000,
+    keepAliveIntervalMs: 30_000,
   });
   activeSock = sock;
 
-  sock.ev.on('creds.update', saveCreds);
-
-  sock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect, qr } = update;
-
-    // Ignore events from stale sockets — only the latest socket matters.
-    if (myId !== socketId) return;
-
-    // ---- Pairing code (triggered by qr event, per Baileys docs) ----
-    if (qr && usePairing && !pairingRequested) {
-      pairingRequested = true;
-      sock.requestPairingCode(pairNumber).then(code => {
+  // ---- Pairing code: request once, straight after the socket is up ----
+  // Requesting on the `qr` event is unreliable; the documented pattern is to
+  // check creds.registered and ask directly, after a short settle delay.
+  pairingRequested = false;
+  if (usePairing && !sock.authState.creds.registered) {
+    pairingRequested = true;
+    setTimeout(async () => {
+      if (myId !== socketId) return;
+      try {
+        const code = await sock.requestPairingCode(pairNumber);
         const pretty = String(code).match(/.{1,4}/g).join('-');
         console.log('\n' + '='.repeat(48));
         console.log('   PAIRING CODE:   ' + pretty);
@@ -190,12 +272,22 @@ async function startBot() {
         console.log('   The code lasts ~3 minutes. If it expires,');
         console.log('   restart and a fresh one is issued.');
         console.log('='.repeat(48) + '\n');
-      }).catch(err => {
+      } catch (err) {
         console.log('[VOLTA] Could not obtain a pairing code:', err && err.message);
-        console.log('   Check the number is correct and in full international form.');
+        console.log('   Check the number is in full international form, digits only.');
+        console.log('   If sessions/ is not empty, delete it and try again.');
         console.log('   Or restart without --pair to use a QR code instead.');
-      });
-    }
+      }
+    }, 3000);
+  }
+
+  sock.ev.on('creds.update', saveCreds);
+
+  sock.ev.on('connection.update', (update) => {
+    const { connection, lastDisconnect, qr } = update;
+
+    // Ignore events from stale sockets — only the latest socket matters.
+    if (myId !== socketId) return;
 
     // ---- QR code ----
     if (qr && !usePairing) {
@@ -221,7 +313,16 @@ async function startBot() {
 
     if (connection === 'open') {
       pairingRequested = false;
-      reconnectAttempts = 0;
+      reconnecting = false;
+      stableSince = Date.now();
+      // Do NOT zero reconnectAttempts here — a socket that opens then dies
+      // immediately would reset the backoff on every cycle and hammer WhatsApp.
+      // It is cleared by the stability timer below.
+      setTimeout(() => {
+        if (myId === socketId && stableSince && Date.now() - stableSince >= STABLE_MS) {
+          reconnectAttempts = 0;
+        }
+      }, STABLE_MS + 500).unref();
       const me = sock.user && String(sock.user.id || '').split(':')[0];
       console.log(`[VOLTA] ✅ Connected as ${me || 'unknown'}`);
       // Stealth connect: start presence cycling after delay
@@ -241,21 +342,59 @@ async function startBot() {
 
       stopPresenceCycling();
 
-      if (status === DisconnectReason.loggedOut) {
-        console.log('[VOLTA] Logged out. Delete the sessions/ folder and start again to re-link.');
+      teardownSocket(sock);
+      if (activeSock === sock) activeSock = null;
+      stableSince = 0;
+
+      // Fatal states. Retrying these forever is what turned a dead session into
+      // an endless "Reconnecting…" scroll: the credentials are gone or rejected,
+      // so no number of attempts will ever succeed.
+      const FATAL = new Set([
+        DisconnectReason.loggedOut,   // 401
+        403,                          // banned / forbidden
+        405,                          // not authorised for this connection
+      ]);
+      if (FATAL.has(status)) {
+        fatalStop = true;
+        console.log(`[VOLTA] ❌ WhatsApp rejected this session (${status}). Not retrying.`);
+        console.log('    Delete the sessions/ folder and link again:');
+        console.log('      rm -rf sessions   (Windows: rmdir /s /q sessions)');
+        console.log('      npm start -- --pair 234XXXXXXXXXX');
         return;
       }
+
       if (status === DisconnectReason.restartRequired) {
-        console.log('[VOLTA] Restart required after linking — reconnecting…');
-        setTimeout(() => startBot().catch((e) => console.log('[VOLTA] reconnect failed:', e && e.message)), 1500);
+        // Expected once, straight after linking. It used to reconnect on a flat
+        // 1.5s with no attempt counter, so if WhatsApp kept sending it the bot
+        // span in a tight loop indefinitely.
+        reconnectAttempts++;
+        if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
+          fatalStop = true;
+          console.log('[VOLTA] ❌ WhatsApp keeps asking for a restart. Giving up — relink the session.');
+          return;
+        }
+        scheduleReconnect(Math.min(1500 * reconnectAttempts, 20000), 'Restart required after linking.');
         return;
       }
-      // 440 = replaced by another connection; use exponential backoff.
+
       reconnectAttempts++;
-      const baseDelay = status === 440 ? 5000 : 3000;
-      const delay = Math.min(baseDelay * Math.pow(1.5, reconnectAttempts - 1), 60000);
-      console.log(`[VOLTA] Connection closed (${status || 'unknown'}). Reconnecting in ${Math.round(delay / 1000)}s (attempt ${reconnectAttempts})…`);
-      setTimeout(() => startBot().catch((e) => console.log('[VOLTA] reconnect failed:', e && e.message)), delay);
+      if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
+        fatalStop = true;
+        console.log(`[VOLTA] ❌ Gave up after ${MAX_RECONNECT_ATTEMPTS} failed reconnects (last status: ${status || 'unknown'}).`);
+        console.log('    The bot is idle. Restart the process, or relink if this keeps happening.');
+        return;
+      }
+
+      // 440 = replaced by another connection. Back off harder for that one:
+      // it usually means a second instance is running somewhere.
+      const baseDelay = status === 440 ? 8000 : 3000;
+      const jitter = Math.floor(Math.random() * 1500);   // avoid lockstep retries
+      const delay = Math.min(baseDelay * Math.pow(1.6, reconnectAttempts - 1), 120000) + jitter;
+      if (status === 440) {
+        console.log('[VOLTA] ⚠️  Status 440 — another session replaced this one.');
+        console.log('    If the bot is running in two places, close one. Two instances will fight forever.');
+      }
+      scheduleReconnect(delay, `Connection closed (${status || 'unknown'}).`);
     }
   });
 
@@ -265,18 +404,20 @@ async function startBot() {
     // Ignore messages from stale sockets.
     if (myId !== socketId) return;
     for (const msg of messages) {
-      if (!msg.message) continue;
-
-      // ── Welcome message for new group members ──
-      const stubType = msg.message?.messageStubType;
-      const stubParams = msg.message?.messageStubParameters;
-      if (stubType === 27 && stubParams && stubParams.length > 0) {
+      // NOTE: messageStubType lives on the message envelope, not on msg.message,
+      // and stub messages carry no msg.message at all — so this must be handled
+      // before the `!msg.message` guard below, not after it.
+      if (msg.messageStubType === 27 && Array.isArray(msg.messageStubParameters)) {
         const groupJid = msg.key?.remoteJid;
-        const addedJid = stubParams[0];
-        if (groupJid && addedJid) {
-          await sendWelcomeMessage(sock, groupJid, addedJid);
+        for (const addedJid of msg.messageStubParameters) {
+          if (groupJid && addedJid) {
+            await sendWelcomeMessage(sock, groupJid, addedJid).catch((err) =>
+              logger.error({ err }, 'Welcome message failed'));
+          }
         }
       }
+
+      if (!msg.message) continue;
 
       if (msg.key && !msg.key.fromMe) {
         const senderJid = msg.key.participant || msg.key.remoteJid;
@@ -328,6 +469,57 @@ main().catch((err) => {
   logger.error({ err }, 'Fatal startup error');
   process.exit(1);
 });
+
+/* ------------------------------------------------------------------ *
+ * Graceful shutdown
+ *
+ * The database is plain JSON files guarded by a lockfile. Killing the
+ * process mid-write can leave a stray .tmp file and — worse — a stale lock
+ * directory that makes every later write hang or fail. Ctrl+C previously
+ * went straight to exit with none of that cleaned up. This flushes any
+ * pending state, releases the lock, and closes the socket politely so
+ * WhatsApp does not register an abrupt drop (which counts against you).
+ * ------------------------------------------------------------------ */
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`\n[VOLTA] ${signal} received — shutting down cleanly…`);
+
+  const done = setTimeout(() => {
+    console.log('[VOLTA] Shutdown timed out, forcing exit.');
+    process.exit(1);
+  }, 8000);
+  done.unref();
+
+  fatalStop = true;
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  try { stopPresenceCycling(); } catch {}
+
+  try {
+    if (typeof db.flushAll === 'function') db.flushAll();
+    else if (typeof db.reloadAll === 'function') { /* nothing pending to flush */ }
+    console.log('[VOLTA] Database flushed.');
+  } catch (err) {
+    console.log('[VOLTA] Database flush failed:', err && err.message);
+  }
+
+  try { if (typeof db.releaseLock === 'function') db.releaseLock(); } catch {}
+
+  try {
+    if (activeSock && typeof activeSock.end === 'function') {
+      activeSock.end(undefined);
+      console.log('[VOLTA] WhatsApp socket closed.');
+    }
+  } catch {}
+
+  clearTimeout(done);
+  console.log('[VOLTA] Goodbye.');
+  process.exit(0);
+}
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 process.on('unhandledRejection', (err) => {
   console.log('[VOLTA] Unhandled promise rejection (kept process alive):', err && (err.stack || err.message || err));

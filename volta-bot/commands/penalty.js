@@ -85,14 +85,14 @@ async function handle({ sock, msg, jid, sender, cmd, args, replyTo, mentioned })
     let result;
     if (myScore > theirScore) {
       if (stake > 0) {
-        User.update(sender, { currency: (me.currency || 0) + stake });
+        User.addCurrency(sender, stake);
         User.update(target, { currency: Math.max(0, (them.currency || 0) - stake) });
       }
       result = `🏆 *${me.name}* wins *${myScore}–${theirScore}*!`;
     } else if (theirScore > myScore) {
       if (stake > 0) {
         User.update(sender, { currency: Math.max(0, (me.currency || 0) - stake) });
-        User.update(target, { currency: (them.currency || 0) + stake });
+        User.addCurrency(target, stake);
       }
       result = `🏆 *${them.name}* wins *${theirScore}–${myScore}*!`;
     } else {
@@ -178,7 +178,7 @@ async function finish(sock, s) {
   if (s.stake > 0) {
     if (won) {
       const payout = Math.round(s.stake * PENALTY.WIN_REWARD_MULT);
-      User.update(s.key, { currency: (me.currency || 0) + payout });
+      User.addCurrency(s.key, payout);
       payoutLine = `\n💰 You won *${money(payout)}*!`;
     } else {
       User.update(s.key, { currency: Math.max(0, (me.currency || 0) - s.stake) });

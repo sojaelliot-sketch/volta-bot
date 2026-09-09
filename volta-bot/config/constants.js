@@ -57,10 +57,10 @@ module.exports = {
   STADIUM: {
     TIERS: {
       sunday_pitch:   { name: 'Sunday Pitch',    tier: 0, cost: 0,     upkeep: 0,   trainingMult: 1.0,  momentumBonus: 0,    conditionRegen: 0,   currencyBonus: 0,    weatherImmune: false },
-      local_ground:   { name: 'Local Ground',    tier: 1, cost: 800,   upkeep: 40,  trainingMult: 1.15, momentumBonus: 0.03, conditionRegen: 0.05, currencyBonus: 0.05, weatherImmune: false },
-      city_arena:     { name: 'City Arena',      tier: 2, cost: 2500,  upkeep: 110, trainingMult: 1.35, momentumBonus: 0.06, conditionRegen: 0.10, currencyBonus: 0.10, weatherImmune: false },
-      volta_colosseum:{ name: 'VOLTA Colosseum', tier: 3, cost: 6000,  upkeep: 260, trainingMult: 1.65, momentumBonus: 0.10, conditionRegen: 0.15, currencyBonus: 0.20, weatherImmune: true },
-      legends_dome:   { name: "Legends' Dome",   tier: 4, cost: 15000, upkeep: 550, trainingMult: 2.0,  momentumBonus: 0.15, conditionRegen: 0.20, currencyBonus: 0.30, weatherImmune: true },
+      local_ground:   { name: 'Local Ground',    tier: 1, cost: 1500,  upkeep: 75,  trainingMult: 1.15, momentumBonus: 0.03, conditionRegen: 0.05, currencyBonus: 0.05, weatherImmune: false },
+      city_arena:     { name: 'City Arena',      tier: 2, cost: 5000,  upkeep: 200, trainingMult: 1.35, momentumBonus: 0.06, conditionRegen: 0.10, currencyBonus: 0.10, weatherImmune: false },
+      volta_colosseum:{ name: 'VOLTA Colosseum', tier: 3, cost: 12000, upkeep: 450, trainingMult: 1.65, momentumBonus: 0.10, conditionRegen: 0.15, currencyBonus: 0.20, weatherImmune: true },
+      legends_dome:   { name: "Legends' Dome",   tier: 4, cost: 25000, upkeep: 900, trainingMult: 2.0,  momentumBonus: 0.15, conditionRegen: 0.20, currencyBonus: 0.30, weatherImmune: true },
     },
     DEFAULT_KEY: 'sunday_pitch',
     UPKEEP_GRACE_DAYS: 2,           // bonuses go dormant (not lost) if unpaid this long
@@ -77,29 +77,33 @@ module.exports = {
 
   // ─── ECONOMY ───────────────────────────────────────────────────────────
   ECONOMY: {
-    STARTING_CURRENCY: 500,
-    WIN_REWARD:  150,
-    DRAW_REWARD:  90,
-    LOSS_REWARD:  60,
-    MVP_BONUS:   100,
-    DAILY_BASE:   50,
-    STREAK_MULTIPLIER: 1.2,
-    MAX_DAILY:   300,
+    STARTING_CURRENCY: 300,
+    WIN_REWARD:  80,
+    DRAW_REWARD: 40,
+    LOSS_REWARD: 20,
+    MVP_BONUS:   50,
+    DAILY_BASE:   30,
+    STREAK_MULTIPLIER: 1.15,
+    MAX_DAILY:   150,
+    MATCH_ENTRY_FEE: 10,       // costs MW to play a match
+    TRANSACTION_TAX: 0.05,     // 5% tax on all market sales
+    SAVINGS_INTEREST: 0.01,    // 1% daily interest on balance (if >1000 MW)
+    SAVINGS_MIN: 1000,         // minimum balance to earn interest
   },
 
   // ─── PACKS ─────────────────────────────────────────────────────────────
   PACKS: {
-    STARTER: { cost: 200, count: 4, weights: { Common: 70, Rare: 25, Elite: 5,  Legendary: 0  } },
-    PRO:     { cost: 500, count: 4, weights: { Common: 40, Rare: 40, Elite: 18, Legendary: 2  } },
-    ELITE:   { cost: 1200,count: 5, weights: { Common: 10, Rare: 40, Elite: 38, Legendary: 12 } },
+    STARTER: { cost: 350, count: 4, weights: { Common: 70, Rare: 25, Elite: 5,  Legendary: 0  } },
+    PRO:     { cost: 800, count: 4, weights: { Common: 40, Rare: 40, Elite: 18, Legendary: 2  } },
+    ELITE:   { cost: 2000,count: 5, weights: { Common: 10, Rare: 40, Elite: 38, Legendary: 12 } },
   },
 
   // ─── RARITY ────────────────────────────────────────────────────────────
   RARITY: {
-    Common:    { emoji: '⚪', bonus: 0,    statMin: 40, statMax: 70 },
-    Rare:      { emoji: '🔵', bonus: 200,  statMin: 60, statMax: 80 },
-    Elite:     { emoji: '🟣', bonus: 600,  statMin: 72, statMax: 90 },
-    Legendary: { emoji: '🟡', bonus: 2000, statMin: 85, statMax: 99 },
+    Common:    { emoji: '⚪', bonus: 400,   statMin: 40, statMax: 70 },
+    Rare:      { emoji: '🔵', bonus: 1500,  statMin: 60, statMax: 80 },
+    Elite:     { emoji: '🟣', bonus: 3000,  statMin: 72, statMax: 90 },
+    Legendary: { emoji: '🟡', bonus: 5000,  statMin: 85, statMax: 99 },
   },
 
   // ─── PLAYER ────────────────────────────────────────────────────────────
@@ -120,11 +124,12 @@ module.exports = {
 
   // ─── TRAINING ──────────────────────────────────────────────────────────
   TRAINING: {
-    BASE_COST:  80,
-    ELITE_COST: 250,
+    BASE_COST:  150,
+    ELITE_COST: 400,
     GREAT_ROLL: 70,
     POOR_ROLL:  30,
     STAT_CAP:   99,
+    LEVEL_SCALE: 0.1,          // cost increases 10% per player level
   },
 
   // ─── MMR ───────────────────────────────────────────────────────────────
@@ -165,12 +170,14 @@ module.exports = {
 
   // ─── SHOP ──────────────────────────────────────────────────────────────
   SHOP: {
-    ENERGY_RESTORE: 150,
-    FORM_BOOST:     200,
-    FOCUS_BOOST:    100,
-    RENAME_TOKEN:    50,
-    SURGERY_COST:   300,    // instant heal from injury
+    ENERGY_RESTORE: 250,
+    FORM_BOOST:     350,
+    FOCUS_BOOST:    150,
+    RENAME_TOKEN:   100,
+    SURGERY_COST:   500,    // instant heal from injury
     SURGERY_LIMIT:  3,      // max surgeries per user, per day
+    INSURANCE_COST: 200,    // insure player against injury (24h)
+    LISTING_FEE:    25,     // fee to list a player on market
   },
 
   // ─── INJURY ─────────────────────────────────────────────────────────────
@@ -183,13 +190,13 @@ module.exports = {
 
   // ─── REFERRAL (virality) ────────────────────────────────────────────────
   REFERRAL: {
-    REWARD:        250,      // Metaworks the referrer earns
-    REFEREE_BONUS: 150,      // Metaworks the new manager gets on top of starter
+    REWARD:        150,      // Metaworks the referrer earns
+    REFEREE_BONUS: 100,      // Metaworks the new manager gets on top of starter
   },
 
   // ─── ACADEMY ───────────────────────────────────────────────────────────
   ACADEMY: {
-    SCOUT_COST:   100,
+    SCOUT_COST:   200,
     SCOUT_SLOTS:    2,
     YOUTH_STAT_MIN: 35,
     YOUTH_STAT_MAX: 60,
@@ -202,6 +209,14 @@ module.exports = {
     USER_LISTING_TTL_MS: 10 * 60 * 1000, // 10 min — user listings auto-sell to house if unsold
     AI_SEED_COUNT:   10,
     PAGE_SIZE:        6,
+    // Hard price floors per rarity so players can never be listed/AI-priced
+    // below these values (Legendary 5k+, Elite 3k+, Rare 1.5k+, Common 400+).
+    RARITY_FLOOR: {
+      Common:   400,
+      Rare:     1500,
+      Elite:    3000,
+      Legendary: 5000,
+    },
   },
 
   // ─── SQUAD ─────────────────────────────────────────────────────────────
@@ -209,7 +224,7 @@ module.exports = {
     STARTING_XI_SIZE: 4,   // VOLTA = 3 outfield + 1 keeper on the pitch
     BENCH_SIZE:       4,
     MAX_SQUADS:       3,    // how many saved squads a manager can own
-    EXTRA_SQUAD_COST: 1500, // cost to unlock an additional squad slot
+    EXTRA_SQUAD_COST: 2500, // cost to unlock an additional squad slot
   },
 
   // ─── GK POSITIONS (shown only for goalkeepers) ─────────────────────────
@@ -277,10 +292,19 @@ module.exports = {
   // ─── MINI-GAMES ────────────────────────────────────────────────────────
   SLOT: {
     COST: 50,
+    MAX_STAKE: 5000,     // was uncapped — you could shovel your whole balance in
     EMOJIS: ['🍒', '🍋', '🔔', '⭐', '💎', '7️⃣'],
-    // payout multiplier on the stake
-    THREE_SAME:   10,    // any three matching
-    TWO_SAME:     2,     // any two matching
+    // Payout multiplier on the stake.
+    //
+    // With 6 symbols on 3 reels there are 216 outcomes: 1 jackpot, 5 other
+    // triples, 90 two-of-a-kind, 120 nothing. The old table (50 / 10 / 2)
+    // returned 129.6% of every coin staked, so !slot was not a game — it was a
+    // money printer that paid ~30% per spin on average, forever.
+    //
+    // These values return 91.7%, an 8.3% house edge, which makes the slot a
+    // genuine currency SINK. Verified in test_economy.js.
+    THREE_SAME:   8,     // any three matching
+    TWO_SAME:     1.2,   // any two matching
     JACKPOT:     50,     // three 7️⃣
   },
   COINFLIP: {

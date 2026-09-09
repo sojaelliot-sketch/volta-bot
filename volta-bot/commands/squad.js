@@ -2,7 +2,7 @@ const User = require('../models/User');
 const Player = require('../models/Player');
 const { RARITY, SQUAD, SHOP, GK_POSITIONS } = require('../config/constants');
 const { money, bar, formEmoji, conditionEmoji } = require('../utils/formatter');
-const { sendText } = require('../utils/messaging');
+const { sendText, sendImageOrText } = require('../utils/messaging');
 const logger = require('../utils/logger');
 const cardRenderer = require('../utils/cardRenderer');
 
@@ -39,11 +39,13 @@ function statsLine(p) {
 function squadRow(p, tag, showStats = false) {
   const emoji = RARITY[p.rarity]?.emoji || '⚪';
   const role = p.role === 'goalkeeper' ? '🧤' : '⚽';
-  let line = `${tag} ${emoji}${role} *${Player.displayName(p)}* (\`${shortId(p.id)}\`)`;
+  const ovr = Player.calculateOVR(p);
+  let line = `${tag} ${emoji}${role} *${Player.displayName(p)}* (\`${shortId(p.id)}\`) [OVR ${ovr}]`;
   if (p.role === 'goalkeeper') line += ` · ${gkPosition(p)}`;
   line += ` — ${p.rarity} ${conditionEmoji(p.condition)}${p.condition}%`;
   if (p.form === 'Hot') line += ` 🔥`;
   if (p.form === 'Cold') line += ` 🥶`;
+  if (p.isCaptain) line += ` 👑`;
   if (showStats) {
     line += `\n   ${statsLine(p)}`;
   }
@@ -96,7 +98,7 @@ async function cmdFlex({ sock, msg, jid, sender, user }) {
 `;
   xi.forEach((p, i) => {
     const r = RARITY[p.rarity]?.emoji || '⚪';
-    block += `${i + 1}. ${r} ${Player.displayName(p)} (${p.rarity}) — ${Player.totalStats(p)} OVR\n`;
+    block += `${i + 1}. ${r} ${Player.displayName(p)} (${p.rarity}) — OVR ${Player.calculateOVR(p)}\n`;
   });
   block += `━━━━━━━━━━━━━━━━━━━━━━
 🏆 Top player: ${topEmoji} ${Player.displayName(top)} (${top.rarity})
@@ -129,11 +131,13 @@ async function cmdCard({ sock, msg, jid, sender, args }) {
     `\n` +
     `*📊 STATS*\n${statsLine(p)}\n\n` +
     `*📈 OVERVIEW*\n` +
+    `OVR: ${Player.calculateOVR(p)}\n` +
     `Total Stats: ${Player.totalStats(p)}\n` +
     `Potential: ${potEmoji} ${p.potential}\n` +
     `Condition: ${bar(p.condition)}\n` +
     `Form: ${formEmoji(p.form)} ${p.form}\n` +
-    `Chemistry: ${p.chemistry}%\n\n` +
+    (p.isCaptain ? `👑 *Captain*\n` : '') +
+    `\n` +
     `*🏅 CAREER*\n` +
     `📊 ${p.matchesPlayed} apps · ${p.goals}⚽ · ${p.assists}🅰️\n` +
     `🧤 ${p.saves} saves · ${p.manOfTheMatch}🌟 MOTM\n\n` +
@@ -146,7 +150,12 @@ async function cmdCard({ sock, msg, jid, sender, args }) {
   // Render the visual FUT-style card image and send it too.
   try {
     const buf = cardRenderer.renderPlayerCard(p);
-    await sock.sendMessage(jid, { image: buf, caption: `🃏 ${Player.displayName(p)} — ${p.rarity} card` }, { quoted: msg });
+    await sendImageOrText(
+      sock, jid, buf,
+      `🃏 ${Player.displayName(p)} — ${p.rarity} card`,
+      msg,
+      `🃏 *${Player.displayName(p)}*\n${p.rarity} · ${p.position} · OVR ${cardRenderer.overallRating(p)}\n_(card image unavailable on this host)_`
+    );
   } catch (err) {
     logger.error({ err }, 'card image render failed');
   }

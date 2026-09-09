@@ -35,7 +35,10 @@
 // This file renders the card. The actual mechanic implementation happens in the
 // match engine, training command, and a weekly upkeep job.
 
-const { createCanvas } = require('canvas');
+const safeCanvas = require('./safeCanvas');
+const createCanvas = safeCanvas.createCanvas;
+// Resolved lazily: 'Volta, sans-serif' when assets/fonts/ holds faces, else 'sans-serif'.
+const FONT = () => safeCanvas.fontFamily();
 
 const W = 750;
 const H = 1050;
@@ -146,14 +149,14 @@ function drawFrame(ctx, stadium) {
 
 function drawHeader(ctx, stadium) {
   ctx.textAlign = 'center';
-  ctx.font = '600 14px sans-serif';
+  ctx.font = `600 14px ${FONT()}`;
   ctx.fillStyle = 'rgba(255,255,255,0.65)';
   ctx.fillText('𝙈𝙀𝙏𝘼𝙒𝙊𝙍𝙆𝙎™ · VOLTA STADIUM', W / 2, 56);
 
   // Big stadium icon
   const iconSize = 120;
   ctx.textAlign = 'center';
-  ctx.font = `${iconSize}px sans-serif`;
+  ctx.font = `${iconSize}px ${FONT()}`;
   ctx.fillText(stadium.emoji, W / 2, 180);
 
   // Glow circle behind icon
@@ -167,36 +170,36 @@ function drawHeader(ctx, stadium) {
   ctx.fill();
 
   // Stadium name
-  ctx.font = '800 42px sans-serif';
+  ctx.font = `800 42px ${FONT()}`;
   ctx.fillStyle = '#fff';
   ctx.fillText(stadium.name, W / 2, 260);
 
   // Tier badge
   const tierNames = ['', 'I', 'II', 'III', 'IV'];
   const tierLabel = `Tier ${tierNames[stadium.tier]}`;
-  ctx.font = '700 18px sans-serif';
+  ctx.font = `700 18px ${FONT()}`;
   ctx.fillStyle = stadium.color;
   ctx.fillText(tierLabel, W / 2, 288);
 }
 
 function drawCapacity(ctx, stadium) {
   ctx.textAlign = 'left';
-  ctx.font = '600 15px sans-serif';
+  ctx.font = `600 15px ${FONT()}`;
   ctx.fillStyle = 'rgba(255,255,255,0.7)';
   ctx.fillText('CAPACITY', 78, 320);
 
-  ctx.font = '800 32px sans-serif';
+  ctx.font = `800 32px ${FONT()}`;
   ctx.fillStyle = '#fff';
   ctx.fillText(`${stadium.capacity.toLocaleString()}`, 78, 360);
 
-  ctx.font = '500 14px sans-serif';
+  ctx.font = `500 14px ${FONT()}`;
   ctx.fillStyle = 'rgba(255,255,255,0.5)';
   ctx.fillText('spectators', 78, 378);
 }
 
 function drawBonusMeter(ctx, stadium, labelX, labelY, meterY, icon, label, value) {
   ctx.textAlign = 'left';
-  ctx.font = '600 14px sans-serif';
+  ctx.font = `600 14px ${FONT()}`;
   ctx.fillStyle = 'rgba(255,255,255,0.7)';
   ctx.fillText(`${icon} ${label}`, labelX, labelY);
 
@@ -220,7 +223,7 @@ function drawBonusMeter(ctx, stadium, labelX, labelY, meterY, icon, label, value
   ctx.restore();
 
   ctx.textAlign = 'right';
-  ctx.font = '700 14px sans-serif';
+  ctx.font = `700 14px ${FONT()}`;
   ctx.fillStyle = '#fff';
   ctx.fillText(`+${(value * 100).toFixed(0)}%`, barX + barW + 20, meterY + 12);
 }
@@ -246,11 +249,11 @@ function drawBonuses(ctx, stadium) {
   // Weather immunity badge
   if (stadium.weatherImmune) {
     ctx.textAlign = 'left';
-    ctx.font = '600 14px sans-serif';
+    ctx.font = `600 14px ${FONT()}`;
     ctx.fillStyle = 'rgba(255,255,255,0.7)';
     ctx.fillText('🛡️ Weather Shield', 78, y - 4);
 
-    ctx.font = '500 13px sans-serif';
+    ctx.font = `500 13px ${FONT()}`;
     ctx.fillStyle = 'rgba(255,255,255,0.55)';
     ctx.fillText('Retractable roof. Rain has no effect on home matches.', 78, y + 16);
     y += 50;
@@ -265,15 +268,15 @@ function drawCosts(ctx, stadium) {
   // Purchase cost
   if (stadium.cost > 0) {
     ctx.textAlign = 'left';
-    ctx.font = '600 15px sans-serif';
+    ctx.font = `600 15px ${FONT()}`;
     ctx.fillStyle = '#ffcf4d';
     ctx.fillText('💳 PURCHASE COST', 78, y);
 
-    ctx.font = '800 28px sans-serif';
+    ctx.font = `800 28px ${FONT()}`;
     ctx.fillStyle = '#fff';
     ctx.fillText(`💲${stadium.cost.toLocaleString()}`, 78, y + 38);
   } else {
-    ctx.font = '600 15px sans-serif';
+    ctx.font = `600 15px ${FONT()}`;
     ctx.fillStyle = '#3ecf6a';
     ctx.fillText('✅ DEFAULT GROUND', 78, y);
   }
@@ -281,11 +284,11 @@ function drawCosts(ctx, stadium) {
   // Upkeep cost
   if (stadium.upkeep > 0) {
     ctx.textAlign = 'right';
-    ctx.font = '600 15px sans-serif';
+    ctx.font = `600 15px ${FONT()}`;
     ctx.fillStyle = '#ff5a5a';
     ctx.fillText('📅 WEEKLY UPKEEP', W - 78, y);
 
-    ctx.font = '800 28px sans-serif';
+    ctx.font = `800 28px ${FONT()}`;
     ctx.fillStyle = '#fff';
     ctx.fillText(`💲${stadium.upkeep.toLocaleString()}`, W - 78, y + 38);
   }
@@ -294,7 +297,7 @@ function drawCosts(ctx, stadium) {
 function drawDescription(ctx, stadium) {
   const y = 880;
   ctx.textAlign = 'center';
-  ctx.font = '500 16px sans-serif';
+  ctx.font = `500 16px ${FONT()}`;
   ctx.fillStyle = 'rgba(255,255,255,0.75)';
 
   const words = stadium.desc.split(' ');
@@ -320,7 +323,7 @@ function drawDescription(ctx, stadium) {
 
 function drawFooter(ctx) {
   ctx.textAlign = 'center';
-  ctx.font = '500 13px sans-serif';
+  ctx.font = `500 13px ${FONT()}`;
   ctx.fillStyle = 'rgba(255,255,255,0.45)';
   ctx.fillText('⚽ Stadiums unlock training bonuses, home-match advantages, and weather immunity', W / 2, H - 48);
   ctx.fillText('Weekly upkeep keeps bonuses active. Sell to recover half the cost.', W / 2, H - 28);
@@ -356,4 +359,4 @@ function renderStadiumCard(stadiumKey) {
   return canvas.toBuffer('image/png');
 }
 
-module.exports = { renderStadiumCard, STADIUM_DATA };
+module.exports = { renderStadiumCard: safeCanvas.guard('renderStadiumCard', renderStadiumCard), STADIUM_DATA };

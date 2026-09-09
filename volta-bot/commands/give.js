@@ -4,6 +4,7 @@
 const User = require('../models/User');
 const { money } = require('../utils/formatter');
 const { sendText } = require('../utils/messaging');
+const ui = require('../utils/ui');
 const { resolveTarget } = require('./router');
 
 async function handle({ sock, msg, jid, sender, args, replyTo, mentioned }) {
@@ -38,18 +39,26 @@ async function handle({ sock, msg, jid, sender, args, replyTo, mentioned }) {
     await sendText(sock, jid, `❌ *${them.name}* hasn't registered yet. They need to use *!start* first.`, msg);
     return;
   }
-  if ((me.currency || 0) < amount) {
-    await sendText(sock, jid, `❌ You only have *${money(me.currency)}*. Can't give *${money(amount)}*.`, msg);
+  // One atomic transfer. This used to be two separate writes, each computed
+  // from a balance read earlier in the handler. If either account was touched
+  // in between — a market sale settling, a second gift arriving — one of the
+  // writes overwrote the other, destroying or conjuring currency.
+  const result = User.transferCurrency(sender, targetJid, amount);
+  if (!result.ok) {
+    if (result.reason === 'insufficient') {
+      await sendText(sock, jid, `❌ You only have *${money(result.balance)}*. Can't give *${money(amount)}*.`, msg);
+    } else {
+      await sendText(sock, jid, `❌ That transfer could not be completed. Nothing was taken from your account.`, msg);
+    }
     return;
   }
 
-  User.update(sender, { currency: (me.currency || 0) - amount });
-  User.update(targetJid, { currency: (them.currency || 0) + amount });
-
-  await sendText(sock, jid,
-    `💸 *Transfer complete!*\n━━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `You sent *${money(amount)}* to *${them.name}*.\n` +
-    `💰 New balance: *${money((me.currency || 0) - amount)}*`, msg, [targetJid]);
+  await sendText(sock, jid, ui.card({
+    icon: '💸', title: 'Sent',
+    lead: `${ui.money(amount)} to *${them.name}*.`,
+    rows: [['Your balance', ui.money(result.from)]],
+    brand: false,
+  }), msg, [targetJid]);
 }
 
 module.exports = { handle };

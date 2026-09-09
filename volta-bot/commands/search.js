@@ -28,11 +28,19 @@ async function handle({ sock, msg, jid, sender, args, user }) {
   }
 
   const ql = q.toLowerCase();
-  const matches = db.all('players')
-    .filter((p) => (p.name || '').toLowerCase().includes(ql))
-    .slice(0, 12);
+  const allMatches = db.all('players')
+    .filter((p) => (p.name || '').toLowerCase().includes(ql));
 
-  if (!matches.length) {
+  // Deduplicate: max 1 of the same player name
+  const nameCount = {};
+  const matches = [];
+  for (const p of allMatches) {
+    nameCount[p.name] = (nameCount[p.name] || 0) + 1;
+    if (nameCount[p.name] <= 1) matches.push(p);
+  }
+  const sliced = matches.slice(0, 12);
+
+  if (!sliced.length) {
     await sendText(sock, jid, `🔎 No players found matching *${q}*.`, msg);
     return;
   }
@@ -42,8 +50,8 @@ async function handle({ sock, msg, jid, sender, args, user }) {
     if (!l.sold) listingByPlayer[l.playerId] = l;
   }
 
-  let text = `🔎 *SEARCH: ${q}* — ${matches.length} result(s)\n━━━━━━━━━━━━━━━━━━━━━━\n`;
-  for (const p of matches) {
+  let text = `🔎 *SEARCH: ${q}* — ${sliced.length} result(s)\n━━━━━━━━━━━━━━━━━━━━━━\n`;
+  for (const p of sliced) {
     const emoji = RARITY[p.rarity]?.emoji || '⚪';
     const role = p.role === 'goalkeeper' ? '🧤' : '⚽';
     const total = Player.totalStats(p);

@@ -32,11 +32,29 @@ function msg(text, sender) {
 }
 
 const results = [];
+// HARNESS BUG, FIXED:
+//
+// This used to record `before = sent.length`, run the command, then read
+// `sent.slice(before)`. But batches are dispatched with Promise.all against a
+// SHARED `sent` array — so a command's slice also picked up every message its
+// neighbours emitted while it was awaiting. One command replying "banned" or
+// "Something went wrong" therefore failed every command that started before it
+// in the same batch.
+//
+// The effect was invisible while message counts stayed constant, and it made
+// the suite report different failures run to run. Each command now gets its own
+// recording socket, so a result reflects only that command's own output.
 async function run(label, text, sender) {
-  const before = sent.length;
+  const mySent = [];
+  const localSock = Object.assign(Object.create(Object.getPrototypeOf(sock)), sock, {
+    sendMessage: async (jid, content, opts) => {
+      mySent.push({ j: jid, c: content });
+      return sock.sendMessage(jid, content, opts);
+    },
+  });
+
   let threw = null;
-  try { await router.handle(sock, msg(text, sender)); } catch (e) { threw = e; }
-  const mySent = sent.slice(before);
+  try { await router.handle(localSock, msg(text, sender)); } catch (e) { threw = e; }
   const errored = mySent.some(s => /Something went wrong/.test(s.c?.text || ''));
   const banned = mySent.some(s => /banned/i.test(s.c?.text || ''));
   const ok = !threw && !errored && !banned;

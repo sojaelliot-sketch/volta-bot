@@ -17,7 +17,7 @@ async function handle({ sock, msg, jid, sender, cmd, args }) {
   if (cmd === 'slot') {
     let stake = parseInt(args[0], 10);
     if (!stake || isNaN(stake)) stake = SLOT.COST;
-    stake = Math.max(SLOT.COST, stake);
+    stake = Math.max(SLOT.COST, Math.min(SLOT.MAX_STAKE || 5000, stake));
     if ((user.currency || 0) < stake) {
       await sendText(sock, jid, `❌ Need *${stake}* Metaworks to spin. You've got *${user.currency || 0}*.`, msg);
       return;
@@ -38,12 +38,18 @@ async function handle({ sock, msg, jid, sender, cmd, args }) {
 
     const payout = Math.round(stake * mult);
     const net = payout - stake;
-    User.update(sender, { currency: (user.currency || 0) - stake + payout });
+    // Atomic: the stake is taken and the payout credited in one locked
+    // read-modify-write, so a concurrent command cannot clobber the balance.
+    const res = User.addCurrency(sender, net);
+    if (!res.ok) {
+      await sendText(sock, jid, `❌ You no longer have enough for that stake.`, msg);
+      return;
+    }
 
     await sendText(sock, jid,
       `🎰 *SPIN* (stake ${stake})\n━━━━━━━━━━━━━━━━━━━━━━━\n  ${line}\n━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `${mult ? label + ` +${net} Metaworks` : `😬 Bust. -${stake} Metaworks`}\n` +
-      `💳 Balance: *${User.getByWhatsappId(sender).currency}*`, msg);
+      `💳 Balance: *${res.balance}*`, msg);
     return;
   }
 
@@ -65,8 +71,12 @@ async function handle({ sock, msg, jid, sender, cmd, args }) {
     const predicted = pickFace === 'heads' || pickFace === 'tails';
     const win = predicted ? (face === pickFace) : (Math.random() < 0.5);
 
-    User.update(sender, { currency: (user.currency || 0) + (win ? amount : -amount) });
-    const balance = User.getByWhatsappId(sender).currency;
+    const flipRes = User.addCurrency(sender, win ? amount : -amount);
+    if (!flipRes.ok) {
+      await sendText(sock, jid, `❌ You no longer have enough for that flip.`, msg);
+      return;
+    }
+    const balance = flipRes.balance;
 
     let head;
     if (predicted) {

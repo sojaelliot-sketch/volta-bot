@@ -50,8 +50,10 @@ const TIPS = [
 ];
 
 let getSock = null;
+let tipsEnabled = true;
 
 function tick() {
+  if (!tipsEnabled) return; // Skip if tips disabled
   const sock = getSock && getSock();
   if (!sock) return;
   const now = Date.now();
@@ -70,12 +72,25 @@ function tick() {
   }
 }
 
+function setTipsEnabled(v) {
+  tipsEnabled = v;
+}
+
+function isTipsEnabled() {
+  return tipsEnabled;
+}
+
 // sockGetter returns the currently-active WhatsApp socket (it changes on
 // reconnect), so the scheduler always sends through a live connection.
 function startTipScheduler(sockGetter, intervalMs) {
   getSock = sockGetter;
+  // Check botstate for initial tips setting
+  try {
+    const botstate = require('../commands/botstate');
+    tipsEnabled = botstate.isTipsEnabled();
+  } catch {}
   setTimeout(tick, 5000); // fire soon after boot so already-due tips go out
   setInterval(tick, intervalMs || TICK_MS);
 }
 
-module.exports = { TIPS, TIP_INTERVAL_MS, startTipScheduler };
+module.exports = { TIPS, TIP_INTERVAL_MS, startTipScheduler, setTipsEnabled, isTipsEnabled };

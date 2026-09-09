@@ -3,6 +3,7 @@ const Player = require('../models/Player');
 const { openPack } = require('../utils/playerGenerator');
 const { PACKS, TRAINING, SHOP: SHOP_CFG, RARITY } = require('../config/constants');
 const { money, bar } = require('../utils/formatter');
+const ui = require('../utils/ui');
 const { sendText, typing } = require('../utils/messaging');
 const { randInt, pick } = require('../utils/random');
 const stadium = require('../utils/stadium');
@@ -17,32 +18,33 @@ async function handle({ sock, msg, jid, sender, cmd, args, user }) {
 }
 
 async function cmdShop({ sock, msg, jid, user }) {
-  await sendText(sock, jid, `🛍️ *VOLTA SHOP* — 𝙈𝙀𝙏𝘼𝙒𝙊𝙍𝙆𝙎™
-━━━━━━━━━━━━━━━━━━━━━
-💳 Your balance: ${money(user.currency)}
+  const lines = [];
+  lines.push('*📦 PACKS*');
+  lines.push(`  • !pack starter — 4 players (Common–Rare)  ·  💲${money(PACKS.STARTER.cost)}`);
+  lines.push(`  • !pack pro — 4 players (Common–Legendary)  ·  💲${money(PACKS.PRO.cost)}`);
+  lines.push(`  • !pack elite — 5 players (Rare–Legendary)  ·  💲${money(PACKS.ELITE.cost)}`);
+  lines.push('');
+  lines.push('*⚡ BOOSTS*');
+  lines.push(`  • !boost energy [id] — full condition restore  ·  💲${money(SHOP_CFG.ENERGY_RESTORE)}`);
+  lines.push(`  • !boost form [id] — hot form 🔥  ·  💲${money(SHOP_CFG.FORM_BOOST)}`);
+  lines.push(`  • !boostall energy|form — your whole squad  ·  💲${money(SHOP_CFG.ENERGY_RESTORE)} × players`);
+  lines.push('');
+  lines.push('*🏥 RECOVERY*');
+  lines.push(`  • !surgery [id|name] — instant heal from injury  ·  💲${money(SHOP_CFG.SURGERY_COST)} (max ${SHOP_CFG.SURGERY_LIMIT}/day)`);
+  lines.push('');
+  lines.push('*🏋️ TRAINING*');
+  lines.push(`  • !train [id|name] — basic session  ·  💲${money(TRAINING.BASE_COST)}`);
+  lines.push(`  • !train elite [id|name] — elite coaching  ·  💲${money(TRAINING.ELITE_COST)}`);
+  lines.push('');
+  lines.push('*✏️ OTHER*');
+  lines.push(`  • !rename [id] [name] — custom nickname  ·  💲${money(SHOP_CFG.RENAME_TOKEN)}`);
 
-*📦 PACKS*
-!pack starter — 4 players (Common–Rare)  — ${money(PACKS.STARTER.cost)}
-!pack pro — 4 players (Common–Legendary)  — ${money(PACKS.PRO.cost)}
-!pack elite — 5 players (Rare–Legendary)  — ${money(PACKS.ELITE.cost)}
-
-*⚡ BOOSTS*
-!boost energy [id] — Full condition restore — ${money(SHOP_CFG.ENERGY_RESTORE)}
-!boost form [id] — Hot form 🔥 — ${money(SHOP_CFG.FORM_BOOST)}
-!boostall energy|form — Boost your WHOLE squad — ${money(SHOP_CFG.ENERGY_RESTORE)}×players
-
- *🏥 RECOVERY*
-!surgery [id|name] — Instant heal from injury — ${money(SHOP_CFG.SURGERY_COST)} (max ${SHOP_CFG.SURGERY_LIMIT}/day)
-
- *🏋️ TRAINING*
-!train [id|name] — Basic session — ${money(TRAINING.BASE_COST)}
-!train elite [id|name] — Elite coaching — ${money(TRAINING.ELITE_COST)}
-
-*✏️ OTHER*
-!rename [id] [name] — Custom nickname — ${money(SHOP_CFG.RENAME_TOKEN)}
-
-━━━━━━━━━━━━━━━━━━━━━
- 💡 Use *!squad* to find player IDs or names, or use names directly (e.g. *!surgery Kane*)`, msg);
+  await sendText(sock, jid, ui.card({
+    icon: '🛍️', title: 'VOLTA SHOP',
+    lead: `Your balance: *💲${ui.money(user.currency)}*`,
+    body: lines,
+    next: 'Use *!squad* to find player IDs — names work too (eg *!surgery Kane*)',
+  }), msg);
 }
 
 async function cmdPack({ sock, msg, jid, sender, args, user }) {
@@ -50,12 +52,19 @@ async function cmdPack({ sock, msg, jid, sender, args, user }) {
   const packConfig = { starter: PACKS.STARTER, pro: PACKS.PRO, elite: PACKS.ELITE }[packType];
 
   if (!packConfig) {
-    await sendText(sock, jid, `⚠️ Usage: *!pack starter* | *!pack pro* | *!pack elite*\n\n🎒 Starter: ${money(PACKS.STARTER.cost)} | Pro: ${money(PACKS.PRO.cost)} | Elite: ${money(PACKS.ELITE.cost)}`, msg);
+    await sendText(sock, jid, ui.problem(`Show me a pack: *!pack starter* | *!pack pro* | *!pack elite*`, `🎒 Starter 💲${money(PACKS.STARTER.cost)}  ·  Pro 💲${money(PACKS.PRO.cost)}  ·  Elite 💲${money(PACKS.ELITE.cost)}`), msg);
     return;
   }
 
   if ((user.currency || 0) < packConfig.cost) {
-    await sendText(sock, jid, `❌ Not enough Metaworks! You need ${money(packConfig.cost)} but only have ${money(user.currency)}.\n\n💰 Play matches or claim *!daily* to earn more.`, msg);
+    await sendText(sock, jid, ui.card({
+      icon: '❌', title: 'Short on Metaworks',
+      rows: [
+        ['Aspiring', `${packType.toUpperCase()} pack costs 💲${money(packConfig.cost)}`],
+        ['Your balance', `💲${ui.money(user.currency)}`],
+      ],
+      next: 'Play matches or claim *!daily* to top up.',
+    }), msg);
     return;
   }
 
@@ -121,7 +130,8 @@ async function cmdBoost({ sock, msg, jid, sender, args, user }) {
   const playerId = args[1];
 
   if (!boostType || !playerId) {
-    await sendText(sock, jid, `⚠️ Usage: *!boost energy [id|name]* or *!boost form [id|name]*\n\n⚡ energy — Restore condition to 100% (${money(SHOP_CFG.ENERGY_RESTORE)})\n🔥 form — Set form to Hot (${money(SHOP_CFG.FORM_BOOST)})`, msg);
+    await sendText(sock, jid, ui.problem(`Give me a boost and a target: *!boost energy [id|name]* or *!boost form [id|name]*`,
+      `⚡ energy — condition to 100%  ·  💲${money(SHOP_CFG.ENERGY_RESTORE)}\n🔥 form — set form to Hot  ·  💲${money(SHOP_CFG.FORM_BOOST)}`), msg);
     return;
   }
 
@@ -142,7 +152,12 @@ async function cmdBoost({ sock, msg, jid, sender, args, user }) {
     }
     User.update(sender, { currency: (user.currency || 0) - SHOP_CFG.ENERGY_RESTORE });
     Player.update(player.id, { condition: 100 });
-    await sendText(sock, jid, `⚡ *Energy Restored!*\n🟢 *${Player.displayName(player)}* is back to 100% condition!\n💰 -${money(SHOP_CFG.ENERGY_RESTORE)}`, msg);
+    await sendText(sock, jid, ui.card({
+      icon: '⚡', title: 'Energy restored',
+      lead: `*${Player.displayName(player)}* is back to full charge.`,
+      rows: [['Condition', '100% 🟢'], ['Cost', `-💲${money(SHOP_CFG.ENERGY_RESTORE)}`]],
+      next: 'Ready to ball — !play or !match.',
+    }), msg);
 
   } else if (boostType === 'form') {
     if ((user.currency || 0) < SHOP_CFG.FORM_BOOST) {
@@ -155,7 +170,12 @@ async function cmdBoost({ sock, msg, jid, sender, args, user }) {
     }
     User.update(sender, { currency: (user.currency || 0) - SHOP_CFG.FORM_BOOST });
     Player.update(player.id, { form: 'Hot' });
-    await sendText(sock, jid, `🔥 *Form Boosted!*\n*${Player.displayName(player)}* is now on FIRE! 🔥\n💰 -${money(SHOP_CFG.FORM_BOOST)}`, msg);
+    await sendText(sock, jid, ui.card({
+      icon: '🔥', title: 'Form boosted',
+      lead: `*${Player.displayName(player)}* is ON FIRE.`,
+      rows: [['Form', 'Hot 🔥'], ['Cost', `-💲${money(SHOP_CFG.FORM_BOOST)}`]],
+      next: 'Friendly reminder they still have to actually score.',
+    }), msg);
 
   } else {
     await sendText(sock, jid, `⚠️ Unknown boost type. Use *!boost energy [id]* or *!boost form [id]*`, msg);
@@ -165,7 +185,8 @@ async function cmdBoost({ sock, msg, jid, sender, args, user }) {
 async function cmdBoostAll({ sock, msg, jid, sender, args, user }) {
   const boostType = (args[0] || '').toLowerCase();
   if (boostType !== 'energy' && boostType !== 'form') {
-    await sendText(sock, jid, `⚠️ Usage: *!boostall energy* or *!boostall form*\n\n⚡ energy — restore every player's condition to 100%\n🔥 form — set every player to Hot form`, msg);
+    await sendText(sock, jid, ui.problem(`Pick a whole-squad boost: *!boostall energy* or *!boostall form*`,
+      `⚡ energy — every player's condition to 100%\n🔥 form — every player to Hot form`), msg);
     return;
   }
 
@@ -185,20 +206,28 @@ async function cmdBoostAll({ sock, msg, jid, sender, args, user }) {
   const cost = per * need.length;
   let u = User.getByWhatsappId(sender);
   if ((u.currency || 0) < cost) {
-    await sendText(sock, jid, `❌ Not enough! Boosting ${need.length} players costs ${money(cost)} (you have ${money(u.currency)}).`, msg);
+    await sendText(sock, jid, `❌ Boosting ${need.length} players costs ${money(cost)} — you have ${money(u.currency)}.`, msg);
     return;
   }
 
   User.update(sender, { currency: (u.currency || 0) - cost });
   for (const p of need) Player.update(p.id, boostType === 'energy' ? { condition: 100 } : { form: 'Hot' });
 
-  await sendText(sock, jid, `⚡ *SQUAD BOOSTED!*\n${need.length} players ${boostType === 'energy' ? 'restored to 100% 🟢' : 'set to Hot form 🔥'}\n💰 -${money(cost)}`, msg);
+  await sendText(sock, jid, ui.card({
+    icon: '💪', title: 'Squad boosted',
+    rows: [
+      ['Players', `${need.length} ${boostType === 'energy' ? 'restored to 100% 🟢' : 'set to Hot 🔥'}`],
+      ['Cost', `-💲${money(cost)}`],
+    ],
+    next: 'That squad owes you a big win.',
+  }), msg);
 }
 
 async function cmdSurgery({ sock, msg, jid, sender, args, user }) {
   const playerId = args[0];
   if (!playerId) {
-    await sendText(sock, jid, `⚠️ Usage: *!surgery [id|name]* — Instantly heal an injured player.\n💰 ${money(SHOP_CFG.SURGERY_COST)} · max ${SHOP_CFG.SURGERY_LIMIT}/day`, msg);
+    await sendText(sock, jid, ui.problem(`Who needs the surgeon? *!surgery [id|name]*`,
+      `🏥 Instant heal from injury  ·  💲${money(SHOP_CFG.SURGERY_COST)}  ·  max ${SHOP_CFG.SURGERY_LIMIT}/day`), msg);
     return;
   }
   const player = Player.findByQuery(sender, playerId);
@@ -230,7 +259,15 @@ async function cmdSurgery({ sock, msg, jid, sender, args, user }) {
   Player.update(player.id, { injuredUntil: null });
 
   const used = User.getByWhatsappId(sender).surgeriesToday || 0;
-  await sendText(sock, jid, `🏥 *SURGERY COMPLETE!* 🔧\n⚡ *${Player.displayName(player)}* is fully healed and ready to ball!\n💰 -${money(SHOP_CFG.SURGERY_COST)} · Surgeries today: ${used}/${SHOP_CFG.SURGERY_LIMIT}`, msg);
+  await sendText(sock, jid, ui.card({
+    icon: '🏥', title: 'Surgery complete',
+    lead: `*${Player.displayName(player)}* is fully healed and ready to ball. 🔧`,
+    rows: [
+      ['Cost', `-💲${money(SHOP_CFG.SURGERY_COST)}`],
+      ['Used today', `${used}/${SHOP_CFG.SURGERY_LIMIT}`],
+    ],
+    next: 'Straight back into the XI!',
+  }), msg);
 }
 
 async function cmdTrain({ sock, msg, jid, sender, args, user }) {
@@ -248,7 +285,9 @@ async function cmdTrain({ sock, msg, jid, sender, args, user }) {
     return;
   }
 
-  const cost = isElite ? TRAINING.ELITE_COST : TRAINING.BASE_COST;
+  const baseCost = isElite ? TRAINING.ELITE_COST : TRAINING.BASE_COST;
+  const levelScale = 1 + (player.level - 1) * (TRAINING.LEVEL_SCALE || 0.1);
+  const cost = Math.round(baseCost * levelScale);
   if ((user.currency || 0) < cost) {
     await sendText(sock, jid, `❌ Not enough! Training costs ${money(cost)}. You have ${money(user.currency)}.`, msg);
     return;
@@ -310,13 +349,17 @@ async function cmdTrain({ sock, msg, jid, sender, args, user }) {
     ? `\n🏟️ ${stadium.tierOf(stadium.resolveKey(user)).name} training boost ×${stadium.trainingMultiplier(user)}`
     : '';
 
-  await sendText(sock, jid, `🏋️ *TRAINING ${isElite ? 'ELITE' : 'SESSION'}*
-━━━━━━━━━━━━━━━━━━━━━━━
-🧑‍🏫 *${Player.displayName(player)}*
-📊 Stat: ${statLabel} ${currentVal} → ${newVal} (${gainDisplay})
-${outcome}${stadiumLine || ''}
-💰 Cost: -${money(cost)}
-━━━━━━━━━━━━━━━━━━━━━━━`, msg);
+  await sendText(sock, jid, ui.card({
+    icon: '🏋️', title: isElite ? 'Elite training' : 'Training session',
+    lead: `*${Player.displayName(player)}*`,
+    rows: [
+      ['Stat', `${statLabel} ${currentVal} → ${newVal} (${gainDisplay})`],
+      ['Result', outcome.replace(/\*/g, '')],
+      ['Cost', `-💲${money(cost)}`],
+    ],
+    body: [stadiumLine].filter(Boolean),
+    next: 'Keep at it — elite coaching stacks the gains.',
+  }), msg);
 }
 
 module.exports = { handle };

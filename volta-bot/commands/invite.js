@@ -22,8 +22,7 @@ Share it with friends 👇
 Reward: 💰 ${money(REFERRAL.REWARD)} for you + ${money(REFERRAL.REFEREE_BONUS)} for them.
 
 👥 Join the VOLTA community group:
-https://chat.whatsapp.com/FD6Mvmdq8wUE1EhSB78xAd
-
+https://chat.whatsapp.com/DZqIcZPnag3Gbci1t3KVXa
 🔥 The more friends you bring, the richer your club gets!`;
 
   await sendText(sock, jid, text, msg);

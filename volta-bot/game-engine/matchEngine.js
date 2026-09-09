@@ -105,10 +105,28 @@ function calcDefensePower(defenders, gk, oppMomentum, footballMinute) {
 //   goalP = 1 / (1 + e^(-(ap + lateBoost - gkPower) / K))
 // K controls sharpness; bigger edge => much higher chance to score.
 function shotGoalProbability(actionPower, gkPower, footballMinute) {
-  const K = 16;
-  // Built-in defensive edge so equal squads get ~25% goalP per shot
-  // (exciting but not a guaranteed goal every attack).
-  const DIFFICULTY = 18;
+  // K controls how decisive a power advantage is on a single shot.
+  //
+  // It used to be 16, which made the logistic so steep that the match was
+  // effectively over at kickoff. Measured across 2,000 simulated matches per
+  // rating gap:
+  //
+  //     gap    K=16      K=34
+  //      +6    80.1%     62.5%
+  //     +12    97.3%     81.4%
+  //     +30   100.0%     99.2%
+  //
+  // A six-point squad advantage winning four games in five leaves no reason to
+  // play the match, and it meant an underdog literally could not win. At 34 the
+  // better squad is still clearly favoured — and a big gap is still decisive —
+  // but an upset is possible, which is the only thing that makes a fixture
+  // worth watching.
+  const K = 34;
+
+  // Raised alongside K to keep scorelines where they were. Flattening the curve
+  // pushes every shot toward 50/50, so without this the average match gained
+  // roughly two goals.
+  const DIFFICULTY = 26;
   const lateBoost = footballMinute >= MATCH.LATE_GAME_MINUTE
     ? randInt(0, MATCH.LATE_GAME_BOOST_MAX)
     : 0;
@@ -141,7 +159,7 @@ function resolveDribbleOutcome(ap, dp) {
 }
 
 function resolveCorner(attackers, gk, momentum, footballMinute) {
-  const attacker  = attackers[0] || { stats: {}, condition: 80, form: 'Normal', chemistry: 50 };
+  const attacker  = pickAttacker(attackers, 'shoot') || { stats: {}, condition: 80, form: 'Normal', chemistry: 50 };
   const ap        = calcActionPower(attacker, 'shoot', momentum, footballMinute) * 1.15;
   const gkS       = gk?.stats || {};
   const gkCond    = gk?.condition || 80;
@@ -174,9 +192,69 @@ function toFootballMinute(elapsedSeconds) {
   return Math.min(90, Math.floor((elapsedSeconds / MATCH.TOTAL_SECONDS) * MATCH.FOOTBALL_MINUTES));
 }
 
+
+// ─── WHO GETS THE BALL ──────────────────────────────────────────────────────
+//
+// Every attacking event used to choose its player with a flat pick() — a
+// uniform random draw across the squad. A 91-rated Legendary striker was
+// exactly as likely to take a shot as a 48-rated Common defender, which is why
+// better players never seemed to score more. The squad you built barely
+// mattered; only the aggregate power did.
+//
+// Selection is now weighted by the stats that action actually needs, by
+// condition, and by whether the player belongs in that phase of play. The
+// exponent controls how decisive quality is: at 2.2, a player rated 85 is about
+// four times more likely to be involved than one rated 55, which is roughly how
+// a real five-a-side plays — the good player gets the ball, but not every time.
+const SELECTION_EXPONENT = 2.2;
+
+function relevanceFor(player, action) {
+  const st = player.stats || {};
+  const cond = player.condition || 100;
+  const e = (v) => effectiveStat(v || 55, cond);
+
+  if (player.role === 'goalkeeper') return 1;   // never picked for attacking play
+
+  switch (action) {
+    case 'shoot':
+      return e(st.shooting) * 0.60 + e(st.composure) * 0.25 + e(st.skill) * 0.15;
+    case 'dribble':
+    case 'skillmove':
+      return e(st.skill) * 0.55 + e(st.pace) * 0.30 + e(st.composure) * 0.15;
+    case 'pass':
+      return e(st.composure) * 0.45 + e(st.skill) * 0.35 + e(st.stamina) * 0.20;
+    default:
+      return (e(st.pace) + e(st.skill) + e(st.shooting) + e(st.composure)) / 4;
+  }
+}
+
+/**
+ * Pick the player involved in an attacking action, weighted by ability.
+ * Falls back to a uniform pick if every candidate scores zero.
+ */
+function pickAttacker(squad, action = 'shoot') {
+  const pool = (squad || []).filter((p) => p && p.role !== 'goalkeeper');
+  const candidates = pool.length ? pool : (squad || []);
+  if (!candidates.length) return null;
+  if (candidates.length === 1) return candidates[0];
+
+  const weights = candidates.map((p) => Math.pow(Math.max(1, relevanceFor(p, action)), SELECTION_EXPONENT));
+  const total = weights.reduce((a, b) => a + b, 0);
+  if (!Number.isFinite(total) || total <= 0) {
+    return candidates[Math.floor(Math.random() * candidates.length)];
+  }
+  let r = Math.random() * total;
+  for (let i = 0; i < candidates.length; i++) {
+    r -= weights[i];
+    if (r <= 0) return candidates[i];
+  }
+  return candidates[candidates.length - 1];
+}
+
 module.exports = {
   calcActionPower, calcDefensePower,
   resolveOutcome, resolveShotOutcome, resolveDribbleOutcome,
   resolveCorner, resolveThrowIn,
   updateMomentum, eventDuration, toFootballMinute,
+  pickAttacker, relevanceFor,
 };

@@ -4,6 +4,7 @@ const { buildStarterSquad } = require('../utils/playerGenerator');
 const { RARITY, MODERATION, REFERRAL, BRAND } = require('../config/constants');
 const { money, bar } = require('../utils/formatter');
 const { sendText, typing } = require('../utils/messaging');
+const onboarding = require('../utils/onboarding');
 
 // ref codes are 6 chars from A-Z / 2-9
 const REF_CODE_RE = /^[A-Z0-9]{6}$/;
@@ -20,6 +21,8 @@ async function handle({ sock, msg, jid, sender, cmd, args }) {
 
   if (cmd === 'start') {
     if (existing?.registered) {
+      const resume = onboarding.reminder(existing);
+      if (resume) { await sendText(sock, jid, resume, msg); return; }
       await sendText(sock, jid, `👋 Welcome back, *${existing.name}*!\n━━━━━━━━━━━━━━━━━━━━━━━━\n💳 ${money(existing.currency)}  🏆 MMR ${existing.mmr} (${existing.rank})\n⚔️ ${existing.wins}W ${existing.losses}L ${existing.draws}D\n━━━━━━━━━━━━━━━━━━━━━━━━\n📋 *!squad* — Your team\n🆚 *!play* — Jump into a match\n🏪 *!shop* — Browse packs\n📅 *!daily* — Claim rewards`, msg);
       return;
     }
@@ -95,9 +98,7 @@ Example: *!register Elliot*
 
   // Pay the referrer their reward.
   if (referrer) {
-    User.update(referrer.whatsappId, {
-      currency: (referrer.currency || 0) + (REFERRAL.REWARD || 0),
-    });
+    User.addCurrency(referrer.whatsappId, REFERRAL.REWARD || 0);
   }
 
   let reveal = `✨ *STARTER SQUAD SIGNED!* ✨
@@ -130,6 +131,10 @@ Example: *!register Elliot*
 📨 *!invite* — Invite friends & earn`;
 
   await sendText(sock, jid, reveal, msg);
+
+  // Hand them one instruction, not a menu. See utils/onboarding.js.
+  const fresh = User.getByWhatsappId(sender);
+  await sendText(sock, jid, onboarding.welcome(fresh), msg);
 }
 
 module.exports = { handle };

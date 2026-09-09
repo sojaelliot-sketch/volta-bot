@@ -17,7 +17,7 @@ const logger = require('../utils/logger');
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 const LOCK_DIR = path.join(DATA_DIR, '.lock');
 
-const TABLES = ['users', 'players', 'market', 'tournaments', 'counters', 'matches', 'social'];
+const TABLES = ['users', 'players', 'market', 'tournaments', 'counters', 'matches', 'social', 'leagues', 'redeemcodes'];
 
 // In-memory cache of each table, kept in sync with disk on every write.
 const cache = {};
@@ -167,6 +167,41 @@ function update(table, id, patch) {
   }
 }
 
+
+/**
+ * Atomic read-modify-write.
+ *
+ * Every currency change in the bot was written as:
+ *     const u = User.getByWhatsappId(jid);
+ *     User.update(jid, { currency: u.currency + amount });
+ *
+ * The read happens OUTSIDE the lock, so the value being written is computed
+ * from a snapshot that may already be stale by the time the write lands. Two
+ * concurrent changes to the same account — a market payout while someone sends
+ * a gift, or the web server crediting a prize while the bot debits a purchase —
+ * and one of them silently vanishes. Money is destroyed or created depending on
+ * which write wins.
+ *
+ * mutate() runs the whole read-modify-write inside the lock, against a copy of
+ * the record freshly synced from disk. `fn` receives the current record and
+ * returns a patch (or null to abort without writing).
+ */
+function mutate(table, id, fn) {
+  const release = acquireLock();
+  try {
+    syncTable(table);
+    const current = cache[table] && cache[table][id];
+    if (!current) return null;
+    const patch = fn({ ...current });
+    if (!patch) return current;
+    cache[table][id] = { ...current, ...patch, updatedAt: new Date().toISOString() };
+    persistTable(table);
+    return cache[table][id];
+  } finally {
+    release();
+  }
+}
+
 function remove(table, id) {
   const release = acquireLock();
   try {
@@ -193,6 +228,54 @@ function reloadAll() {
   for (const t of TABLES) reloadTable(t);
 }
 
+/**
+ * Write every cached table to disk. Called on shutdown so a Ctrl+C can never
+ * lose the last few mutations sitting in memory.
+ */
+function flushAll() {
+  for (const table of TABLES) {
+    if (cache[table]) {
+      try { persistTable(table); } catch (err) {
+        logger.error({ err, table }, `Flush failed for ${table}`);
+      }
+    }
+  }
+}
+
+/**
+ * Remove this process's write lock and any orphaned .tmp files left by an
+ * interrupted write. Safe to call when nothing is held.
+ */
+function releaseLock() {
+  try {
+    const lockFile = path.join(LOCK_DIR, 'write.lock');
+    if (fs.existsSync(lockFile)) {
+      const [pid] = String(fs.readFileSync(lockFile, 'utf8')).split(':');
+      if (Number(pid) === process.pid) fs.unlinkSync(lockFile);
+    }
+  } catch {}
+  try {
+    for (const table of TABLES) {
+      const tmp = `${tableFile(table)}.tmp`;
+      if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
+    }
+  } catch {}
+}
+
+/** Lightweight health snapshot, used by the !diag command. */
+function healthSnapshot() {
+  const out = {};
+  for (const table of TABLES) {
+    try {
+      const rows = cache[table] ? Object.keys(cache[table]).length : 0;
+      const file = tableFile(table);
+      const size = fs.existsSync(file) ? fs.statSync(file).size : 0;
+      out[table] = { rows, bytes: size };
+    } catch { out[table] = { rows: -1, bytes: -1 }; }
+  }
+  return out;
+}
+
 module.exports = {
   connectDB,
   all,
@@ -201,7 +284,11 @@ module.exports = {
   findOne,
   insert,
   update,
+  mutate,
   remove,
   reloadTable,
   reloadAll,
+  flushAll,
+  releaseLock,
+  healthSnapshot,
 };

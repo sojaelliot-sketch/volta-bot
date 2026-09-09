@@ -2,6 +2,7 @@ node_modules/
 sessions/
 data/*.json
 .env
+a.txt
 logs/
 *.log
 npm-debug.log*

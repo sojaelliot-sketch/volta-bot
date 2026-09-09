@@ -8,7 +8,7 @@ const { RARITY } = require('../config/constants');
 const { sendText } = require('../utils/messaging');
 
 const METRICS = {
-  ovr:   { label: 'OVERALL RATING', get: (p) => Player.totalStats(p),                 fmt: (v) => `${v} OVR` },
+  ovr:   { label: 'OVERALL RATING', get: (p) => Player.calculateOVR(p),               fmt: (v) => `${v} OVR` },
   goals: { label: 'CAREER GOALS',   get: (p) => p.goals || 0,                        fmt: (v) => `${v}⚽` },
   motm:  { label: 'MAN OF THE MATCH', get: (p) => p.manOfTheMatch || 0,               fmt: (v) => `${v}🌟` },
   value: { label: 'MARKET VALUE',    get: (p) => Player.marketValue(p),               fmt: (v) => `${v}💰` },

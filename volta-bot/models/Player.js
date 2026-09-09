@@ -168,6 +168,68 @@ function totalStats(player) {
     : s.pace + s.skill + s.shooting + s.stamina + s.composure;
 }
 
+// Calculate OVR (Overall Rating) for a player
+// OVR = Base (avg stats) + Rarity Bonus + Level Bonus + Form Bonus + Captain Bonus
+function calculateOVR(player) {
+  const s = player.stats;
+  const numStats = player.role === 'goalkeeper' ? 5 : 5;
+
+  // Base OVR = average of all stats
+  let base;
+  if (player.role === 'goalkeeper') {
+    base = (s.reflex + s.positioning + s.anticipation + s.strength + s.composure) / numStats;
+  } else {
+    base = (s.pace + s.skill + s.shooting + s.stamina + s.composure) / numStats;
+  }
+
+  // Rarity bonus
+  const rarityBonuses = { Legendary: 8, Elite: 5, Rare: 2, Common: 0 };
+  const rarityBonus = rarityBonuses[player.rarity] || 0;
+
+  // Level bonus (+0.5 per level, max +10)
+  const levelBonus = Math.min(10, (player.level - 1) * 0.5);
+
+  // Form bonus
+  let formBonus = 0;
+  if (player.form === 'Hot') formBonus = 3;
+  else if (player.form === 'Cold') formBonus = -3;
+
+  // Captain bonus
+  const captainBonus = player.isCaptain ? 2 : 0;
+
+  // Injury penalty
+  const injuryPenalty = player.injured ? -5 : 0;
+
+  // Condition penalty (if below 50%)
+  const conditionPenalty = (player.condition || 100) < 50 ? -3 : 0;
+
+  const ovr = Math.round(base + rarityBonus + levelBonus + formBonus + captainBonus + injuryPenalty + conditionPenalty);
+  return Math.max(1, Math.min(99, ovr)); // Clamp between 1-99
+}
+
+// Get OVR breakdown for display
+function getOVRBreakdown(player) {
+  const s = player.stats;
+  const numStats = 5;
+  const base = player.role === 'goalkeeper'
+    ? (s.reflex + s.positioning + s.anticipation + s.strength + s.composure) / numStats
+    : (s.pace + s.skill + s.shooting + s.stamina + s.composure) / numStats;
+
+  const rarityBonuses = { Legendary: 8, Elite: 5, Rare: 2, Common: 0 };
+  const levelBonus = Math.min(10, (player.level - 1) * 0.5);
+  let formBonus = player.form === 'Hot' ? 3 : player.form === 'Cold' ? -3 : 0;
+  const captainBonus = player.isCaptain ? 2 : 0;
+
+  return {
+    base: Math.round(base),
+    rarity: rarityBonuses[player.rarity] || 0,
+    level: Math.round(levelBonus * 10) / 10,
+    form: formBonus,
+    captain: captainBonus,
+    total: calculateOVR(player),
+  };
+}
+
 // Value = (TotalStats × LevelFactor × FormFactor) + RarityBonus
 function marketValue(player) {
   const rarityBonus = RARITY[player.rarity]?.bonus || 0;
@@ -188,5 +250,7 @@ module.exports = {
   remove,
   displayName,
   totalStats,
+  calculateOVR,
+  getOVRBreakdown,
   marketValue,
 };

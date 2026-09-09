@@ -2,7 +2,7 @@
 //   !broadcast [message]  — owner + officer: send a message to every group the bot is in
 const User = require('../models/User');
 const { BRAND } = require('../config/constants');
-const { sendText } = require('../utils/messaging');
+const { sendText, sleep } = require('../utils/messaging');
 
 async function handle({ sock, msg, jid, sender, args }) {
   if (!User.isOwner(sender)) {
@@ -31,8 +31,10 @@ async function handle({ sock, msg, jid, sender, args }) {
 
   for (const g of ids) {
     try {
-      await sock.sendMessage(g, { text: payload });
+      await sendText(sock, g, payload);
       sent++;
+      // Small delay between groups (1-2s)
+      await sleep(1000 + Math.random() * 1000);
     } catch {
       // ignore groups we can't reach
     }

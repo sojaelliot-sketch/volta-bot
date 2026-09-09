@@ -54,6 +54,7 @@ function newUserDoc(whatsappId, name) {
     role: 'user',          // user | moderator | officer
     warnings: 0,
     bannedUntil: null,      // ISO string or null
+    cooldownUntil: null,    // ISO string or null — staff-set command cooldown
 
     // Stadium ownership (catch system). key is one of STADIUM.TIERS, or omitted
     // for the default Sunday Pitch. fanEnergy (0-100) gates home bonuses.
@@ -115,6 +116,53 @@ function update(whatsappId, patch) {
   return db.update(TABLE, whatsappId, patch);
 }
 
+
+/**
+ * Change a balance atomically. Use this for EVERY currency movement instead of
+ * reading the balance and writing back an absolute value — see db.mutate().
+ *
+ * Returns { ok, balance, applied }. When `allowNegative` is false (the default)
+ * a debit larger than the balance is refused outright rather than quietly
+ * pushing the account below zero.
+ */
+function addCurrency(whatsappId, delta, { allowNegative = false } = {}) {
+  const amount = Math.round(Number(delta) || 0);
+  let result = { ok: false, balance: 0, applied: 0 };
+  db.mutate(TABLE, whatsappId, (u) => {
+    const before = Math.max(0, Math.round(u.currency || 0));
+    const after = before + amount;
+    if (!allowNegative && after < 0) {
+      result = { ok: false, balance: before, applied: 0, reason: 'insufficient' };
+      return null;
+    }
+    const finalBalance = Math.max(0, after);
+    result = { ok: true, balance: finalBalance, applied: finalBalance - before };
+    return { currency: finalBalance };
+  });
+  return result;
+}
+
+/**
+ * Move currency between two accounts without any window in which the money
+ * exists in both places or neither. The debit is attempted first; the credit
+ * only happens if it succeeded, and is rolled back if the credit fails.
+ */
+function transferCurrency(fromJid, toJid, amount) {
+  const amt = Math.round(Number(amount) || 0);
+  if (amt <= 0) return { ok: false, reason: 'invalid_amount' };
+  if (fromJid === toJid) return { ok: false, reason: 'same_account' };
+
+  const debit = addCurrency(fromJid, -amt);
+  if (!debit.ok) return { ok: false, reason: 'insufficient', balance: debit.balance };
+
+  const credit = addCurrency(toJid, amt);
+  if (!credit.ok) {
+    addCurrency(fromJid, amt, { allowNegative: true });   // roll back
+    return { ok: false, reason: 'credit_failed' };
+  }
+  return { ok: true, from: debit.balance, to: credit.balance, amount: amt };
+}
+
 function getOrCreate(whatsappId) {
   return getByWhatsappId(whatsappId) || create(whatsappId);
 }
@@ -126,6 +174,19 @@ function winRate(user) {
 
 function all() {
   return db.all(TABLE);
+}
+
+// Find a registered user by exact name (case-insensitive), then by partial match.
+// Used by commands that accept a manager NAME instead of a raw number/jid.
+function findByName(name) {
+  if (!name) return null;
+  const s = String(name).trim().toLowerCase();
+  const users = db.all(TABLE).filter((u) => u && u.registered);
+  return (
+    users.find((u) => String(u.name || '').toLowerCase() === s) ||
+    users.find((u) => String(u.name || '').toLowerCase().includes(s)) ||
+    null
+  );
 }
 
 function roleRank(role) {
@@ -154,7 +215,17 @@ function banRemainingMs(user) {
   return Math.max(0, new Date(user.bannedUntil).getTime() - Date.now());
 }
 
+function isOnCooldown(user) {
+  if (!user || !user.cooldownUntil) return false;
+  return new Date(user.cooldownUntil).getTime() > Date.now();
+}
+
+function cooldownRemainingMs(user) {
+  if (!user || !user.cooldownUntil) return 0;
+  return Math.max(0, new Date(user.cooldownUntil).getTime() - Date.now());
+}
+
 module.exports = {
-  create, getByWhatsappId, getOrCreate, update, winRate, all, genRefCode,
-  roleRank, isOwner, isStaff, isBanned, banRemainingMs, normalizeJid,
+  create, getByWhatsappId, getByWhatsAppId: getByWhatsappId, getOrCreate, update, addCurrency, transferCurrency, winRate, all, genRefCode, findByName,
+  roleRank, isOwner, isStaff, isBanned, banRemainingMs, isOnCooldown, cooldownRemainingMs, normalizeJid,
 };

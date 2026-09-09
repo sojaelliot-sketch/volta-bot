@@ -1,7 +1,10 @@
 // utils/profileRenderer.js
 // Renders a manager profile card as a PNG buffer. Self-contained (no imports
 // beyond canvas) so it can be dropped into any project on its own.
-const { createCanvas } = require('canvas');
+const safeCanvas = require('./safeCanvas');
+const createCanvas = safeCanvas.createCanvas;
+// Resolved lazily: 'Volta, sans-serif' when assets/fonts/ holds faces, else 'sans-serif'.
+const FONT = () => safeCanvas.fontFamily();
 
 const W = 750;
 const H = 1000;
@@ -113,7 +116,7 @@ function drawFrame(ctx, tier) {
 
 function drawHeader(ctx, user, tier) {
   ctx.textAlign = 'center';
-  ctx.font = '600 14px sans-serif';
+  ctx.font = `600 14px ${FONT()}`;
   ctx.fillStyle = 'rgba(255,255,255,0.6)';
   ctx.fillText('𝙈𝙀𝙏𝘼𝙒𝙊𝙍𝙆𝙎™ · VOLTA MANAGER PROFILE', W / 2, 56);
 
@@ -137,7 +140,7 @@ function drawHeader(ctx, user, tier) {
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.stroke();
 
-  ctx.font = '800 58px sans-serif';
+  ctx.font = `800 58px ${FONT()}`;
   ctx.fillStyle = '#fff';
   ctx.save();
   ctx.shadowColor = 'rgba(0,0,0,0.5)';
@@ -148,7 +151,7 @@ function drawHeader(ctx, user, tier) {
   // Rank badge overlapping bottom of avatar
   const badgeY = cy + r - 6;
   const badgeText = `${tier.label.toUpperCase()}`;
-  ctx.font = '800 15px sans-serif';
+  ctx.font = `800 15px ${FONT()}`;
   const badgeW = ctx.measureText(badgeText).width + 44;
   roundRect(ctx, cx - badgeW / 2, badgeY, badgeW, 30, 15);
   ctx.fillStyle = tier.color;
@@ -157,18 +160,18 @@ function drawHeader(ctx, user, tier) {
   ctx.fillText(badgeText, cx, badgeY + 21);
 
   // Name
-  ctx.font = '800 36px sans-serif';
+  ctx.font = `800 36px ${FONT()}`;
   ctx.fillStyle = '#fff';
   let name = user.name || 'Manager';
   let fontSize = 36;
-  ctx.font = `800 ${fontSize}px sans-serif`;
+  ctx.font = `800 ${fontSize}px ${FONT()}`;
   while (ctx.measureText(name).width > W - 120 && fontSize > 20) {
     fontSize -= 2;
-    ctx.font = `800 ${fontSize}px sans-serif`;
+    ctx.font = `800 ${fontSize}px ${FONT()}`;
   }
   ctx.fillText(name, W / 2, 330);
 
-  ctx.font = '500 16px sans-serif';
+  ctx.font = `500 16px ${FONT()}`;
   ctx.fillStyle = 'rgba(255,255,255,0.6)';
   const joined = user.createdAt ? new Date(user.createdAt) : null;
   const joinedText = joined && !isNaN(joined)
@@ -184,14 +187,14 @@ function drawMMRBar(ctx, user, tier) {
   const barX = 90, barW = W - 180, barH = 18;
 
   ctx.textAlign = 'left';
-  ctx.font = '700 14px sans-serif';
+  ctx.font = `700 14px ${FONT()}`;
   ctx.fillStyle = tier.color;
   ctx.fillText(`MMR ${user.mmr}`, barX, y - 10);
 
   const nextInfo = nextRankInfo(user.mmr);
   ctx.textAlign = 'right';
   ctx.fillStyle = 'rgba(255,255,255,0.55)';
-  ctx.font = '500 13px sans-serif';
+  ctx.font = `500 13px ${FONT()}`;
   ctx.fillText(
     nextInfo ? `${nextInfo.next.label} at ${nextInfo.next.min}` : 'Max tier reached',
     barX + barW,
@@ -257,11 +260,11 @@ function drawStatGrid(ctx, user, tier, extra) {
     ctx.stroke();
 
     ctx.textAlign = 'center';
-    ctx.font = '700 13px sans-serif';
+    ctx.font = `700 13px ${FONT()}`;
     ctx.fillStyle = 'rgba(255,255,255,0.55)';
     ctx.fillText(s.label, x + cellW / 2, y + 30);
 
-    ctx.font = '800 30px sans-serif';
+    ctx.font = `800 30px ${FONT()}`;
     ctx.fillStyle = s.color;
     ctx.save();
     ctx.shadowColor = s.color;
@@ -282,7 +285,7 @@ function drawFooter(ctx, user, tier) {
 
   const pillH = 48;
   const gap = 16;
-  ctx.font = '700 17px sans-serif';
+  ctx.font = `700 17px ${FONT()}`;
   const widths = pills.map((p) => ctx.measureText(`${p.icon} ${p.text}`).width + 46);
   const totalW = widths.reduce((a, b) => a + b, 0) + gap;
   let x = (W - totalW) / 2;
@@ -304,7 +307,7 @@ function drawFooter(ctx, user, tier) {
   });
 
   ctx.textAlign = 'center';
-  ctx.font = '500 13px sans-serif';
+  ctx.font = `500 13px ${FONT()}`;
   ctx.fillStyle = 'rgba(255,255,255,0.45)';
   ctx.fillText('⚽ Build your squad on VOLTA — WhatsApp 5-a-side simulation', W / 2, H - 40);
 }
@@ -339,4 +342,4 @@ function renderProfileCard(user, extra = {}) {
   return canvas.toBuffer('image/png');
 }
 
-module.exports = { renderProfileCard, rankForMMR };
+module.exports = { renderProfileCard: safeCanvas.guard('renderProfileCard', renderProfileCard), rankForMMR };

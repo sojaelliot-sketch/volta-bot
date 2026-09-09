@@ -24,13 +24,13 @@ async function handle({ sock, msg, jid, sender, user }) {
     return;
   }
 
-  players.sort((a, b) => Player.totalStats(b) - Player.totalStats(a));
+  players.sort((a, b) => Player.calculateOVR(b) - Player.calculateOVR(a));
 
   let out = `📦 *YOUR RESERVES* (${players.length})\n━━━━━━━━━━━━━━━━━━━━━━━\n`;
   for (const p of players) {
     const emoji = RARITY[p.rarity]?.emoji || '⚪';
     const role = p.role === 'goalkeeper' ? '🧤 GK' : '⚽ OF';
-    out += `${emoji} *${Player.displayName(p)}* · ${role} · OVR ${Player.totalStats(p)}\n`;
+    out += `${emoji} *${Player.displayName(p)}* · ${role} · OVR ${Player.calculateOVR(p)}\n`;
     out += `   ${p.rarity} · 💰 ${money(Player.marketValue(p))} · 🆔 \`${p.id.slice(0, 6)}\`\n`;
   }
   out += `━━━━━━━━━━━━━━━━━━━━━━━\n` +

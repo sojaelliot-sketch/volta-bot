@@ -13,7 +13,7 @@ const { resolveTarget } = require('./router');
 
 function looksLikeJid(arg) {
   if (!arg) return false;
-  return /^\d{6,}$/.test(arg) || arg.includes('@');
+  return /^\d{6,}$/.test(arg) || /^\d+@s\.whatsapp\.net$/.test(arg);
 }
 
 async function handle({ sock, msg, jid, sender, args, replyTo, mentioned }) {

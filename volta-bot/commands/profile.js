@@ -5,8 +5,9 @@
 //   !info [@user|id]  — show another manager's public profile
 const User = require('../models/User');
 const Player = require('../models/Player');
+const League = require('../models/League');
 const { money } = require('../utils/formatter');
-const { sendText } = require('../utils/messaging');
+const { sendText, sendImageOrText } = require('../utils/messaging');
 const logger = require('../utils/logger');
 const { BRAND } = require('../config/constants');
 const { resolveTarget } = require('./router');
@@ -20,18 +21,70 @@ function roleLabel(role) {
 
 function profileBlock(u) {
   const owned = Player.getByOwner(u.whatsappId);
-  const ovr = owned.length
-    ? owned.reduce((s, p) => s + Player.totalStats(p), 0)
-    : 0;
+  
+  // Calculate proper OVR for each player and get team OVR
+  let teamOVR = 0;
+  let bestPlayer = null;
+  let bestOVR = 0;
+  
+  if (owned.length > 0) {
+    for (const p of owned) {
+      p.ovr = Player.calculateOVR(p);
+      teamOVR += p.ovr;
+      if (p.ovr > bestOVR) {
+        bestOVR = p.ovr;
+        bestPlayer = p;
+      }
+    }
+    teamOVR = Math.round(teamOVR / owned.length);
+  }
+  
   const badges = formatBadges(u);
+
+  // Get league info
+  const divInfo = League.getPlayerDivision(u.whatsappId);
+  const leagueText = divInfo
+    ? `${divInfo.emoji} *${divInfo.name}* — ${divInfo.subtitle}\n  Points: ${divInfo.stats?.points || 0} | W:${divInfo.stats?.wins || 0} D:${divInfo.stats?.draws || 0} L:${divInfo.stats?.losses || 0}\n`
+    : '🎓 *Unranked*\n';
+
+  // Captain
+  const captain = owned.find(p => p.isCaptain);
+  const captainText = captain ? `👑 Captain: *${captain.name}* (OVR ${captain.ovr || 70})\n` : '';
+
+  // Trophies
+  const trophies = u.trophies || {};
+  const totalTrophies = (trophies.league?.length || 0) + (trophies.tournaments?.length || 0) + (trophies.cups?.length || 0);
+  const trophyText = totalTrophies > 0 ? `🏆 Trophies: ${totalTrophies}\n` : '';
+
+  // Team chemistry
+  let chem = 0;
+  if (owned.length > 0) {
+    const nationalityGroups = {};
+    for (const p of owned) {
+      const nat = p.nationality || 'Unknown';
+      if (!nationalityGroups[nat]) nationalityGroups[nat] = [];
+      nationalityGroups[nat].push(p);
+    }
+    for (const [, players] of Object.entries(nationalityGroups)) {
+      if (players.length >= 2) chem += players.length * 5;
+    }
+    const hasCaptain = owned.some(p => p.isCaptain);
+    if (hasCaptain) chem += 15;
+    chem = Math.min(100, chem);
+  }
+
   return (
     `👤 *${u.name}*\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    leagueText +
+    captainText +
     `💰 ${money(u.currency)}  🏆 MMR ${u.mmr} (${u.rank})\n` +
     `⚔️ ${u.wins}W ${u.losses}L ${u.draws}D  ·  ${User.winRate(u)}% win rate\n` +
-    `⚽ ${u.totalGoals || 0} career goals  🏆 ${u.tournamentWins || 0} tournament wins\n` +
-    `🔥 Win streak: ${u.winStreak || 0}\n` +
-    `🧢 ${owned.length} players  ·  Squad OVR ${ovr}\n` +
+    `⚽ ${u.totalGoals || 0} career goals  📊 ${u.goalsConceded || 0} clean sheets\n` +
+    `🔥 Win streak: ${u.winStreak || 0}  ${trophyText}` +
+    `🧪 Chemistry: ${chem}/100\n` +
+    `🧢 ${owned.length} players  ·  Team OVR: ${teamOVR}\n` +
+    (bestPlayer ? `⭐ Best: ${bestPlayer.name} (OVR ${bestPlayer.ovr})\n` : '') +
     `👥 Role: ${roleLabel(u.role)}\n` +
     (badges ? `━━━━━━━━━━━━━━━━━━━━━━━\n${badges}\n` : '') +
     `━━━━━━━━━━━━━━━━━━━━━━━`
@@ -69,7 +122,7 @@ async function handle({ sock, msg, jid, sender, cmd, args, replyTo, mentioned })
     await sendText(sock, jid, profileBlock(u) + `\n${BRAND}`, msg);
     try {
       const buf = require('../utils/profileRenderer').renderProfileCard(u);
-      await sock.sendMessage(jid, { image: buf, caption: `🪪 *${u.name}* — VOLTA manager profile` }, { quoted: msg });
+      await sendImageOrText(sock, jid, buf, `🪪 *${u.name}* — VOLTA manager profile`, msg, '');
     } catch (err) { logger.error({ err }, 'profile card render failed'); }
     return;
   }
@@ -84,7 +137,7 @@ async function handle({ sock, msg, jid, sender, cmd, args, replyTo, mentioned })
     await sendText(sock, jid, profileBlock(u) + `\n${BRAND}`, msg);
     try {
       const buf = require('../utils/profileRenderer').renderProfileCard(u);
-      await sock.sendMessage(jid, { image: buf, caption: `🪪 *${u.name}* — VOLTA manager profile` }, { quoted: msg });
+      await sendImageOrText(sock, jid, buf, `🪪 *${u.name}* — VOLTA manager profile`, msg, '');
     } catch (err) { logger.error({ err }, 'profile card render failed'); }
     return;
   }

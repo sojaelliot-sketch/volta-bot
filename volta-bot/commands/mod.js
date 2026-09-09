@@ -3,6 +3,8 @@
 //   !ban [id]              — owner + officer: ban a user (permanent, until unbanned)
 //   !unban [id]            — owner + officer: remove a ban
 //   !warn [id]             — owner + officer + moderator: warn a user (3 warns → 3-min ban)
+//   !cooldown [secs]       — owner + officer + moderator: cooldown a user for X seconds
+//   !uncooldown [id]       — owner + officer + moderator: remove cooldown early
 //   !promote [id] officer|moderator — owner + officer: promote a user
 //   !demote [id]           — owner + officer: demote back to user
 //   !kick [target]         — owner + officer + moderator: remove from group (best effort)
@@ -20,6 +22,8 @@ function can(actor, action) {
   const req = {
     ban:    User.roleRank('officer'),
     unban:  User.roleRank('officer'),
+    cooldown: User.roleRank('moderator'),
+    uncooldown: User.roleRank('moderator'),
     promote: User.roleRank('moderator'),
     demote: User.roleRank('officer'),
     warn:   User.roleRank('moderator'),
@@ -52,7 +56,7 @@ async function handle({ sock, msg, jid, sender, cmd, args, replyTo, mentioned })
     return;
   }
 
-  if (cmd === 'ban' || cmd === 'unban' || cmd === 'warn' || cmd === 'promote' || cmd === 'demote' || cmd === 'kick') {
+  if (cmd === 'ban' || cmd === 'unban' || cmd === 'warn' || cmd === 'cooldown' || cmd === 'uncooldown' || cmd === 'promote' || cmd === 'demote' || cmd === 'kick') {
     if (!can(sender, cmd)) {
       await sendText(sock, jid, `⛔ You don't have permission to use *!${cmd}*.`, msg);
       return;
@@ -89,6 +93,38 @@ async function handle({ sock, msg, jid, sender, cmd, args, replyTo, mentioned })
       return;
     }
 
+    if (cmd === 'cooldown') {
+      // Determine which arg holds the seconds: if target came from reply/mention,
+      // the seconds is args[0]; if target came from args[0] (JID/name), seconds is args[1].
+      const targetFromContext = replyTo || mentioned;
+      const secsArg = targetFromContext ? args[0] : args[1];
+      const secs = parseInt(secsArg, 10);
+      if (!secs || isNaN(secs) || secs < 1 || secs > 86400) {
+        await sendText(sock, jid, `⚠️ Usage: *!cooldown [seconds] @user* or reply with *!cooldown [seconds]*\nMax: 86400s (24h)`, msg);
+        return;
+      }
+      User.update(targetJid, { cooldownUntil: new Date(Date.now() + secs * 1000).toISOString() });
+      const hrs = Math.floor(secs / 3600);
+      const mins = Math.floor((secs % 3600) / 60);
+      const remainingSecs = secs % 60;
+      let timeStr = '';
+      if (hrs > 0) timeStr += `${hrs}h `;
+      if (mins > 0) timeStr += `${mins}m `;
+      if (remainingSecs > 0 || timeStr === '') timeStr += `${remainingSecs}s`;
+      await sendText(sock, jid, `⏳ *${target.name}* has been put on cooldown for *${timeStr.trim()}*.`, msg);
+      return;
+    }
+
+    if (cmd === 'uncooldown') {
+      if (!target.cooldownUntil) {
+        await sendText(sock, jid, `ℹ️ *${target.name}* is not on cooldown.`, msg);
+        return;
+      }
+      User.update(targetJid, { cooldownUntil: null });
+      await sendText(sock, jid, `✅ *${target.name}* cooldown removed.`, msg);
+      return;
+    }
+
     if (cmd === 'warn') {
       const w = (target.warnings || 0) + 1;
       if (w >= MODERATION.WARNINGS_BEFORE_BAN) {
@@ -102,7 +138,11 @@ async function handle({ sock, msg, jid, sender, cmd, args, replyTo, mentioned })
     }
 
     if (cmd === 'promote') {
-      const role = (args[1] || 'moderator').toLowerCase();
+      // Determine which arg holds the role: if target came from reply/mention,
+      // the role is args[0]; if target came from args[0] (JID/name), role is args[1].
+      const targetFromContext = replyTo || mentioned;
+      const roleArg = targetFromContext ? args[0] : args[1];
+      const role = (roleArg || 'moderator').toLowerCase();
       if (role !== 'officer' && role !== 'moderator') {
         await sendText(sock, jid, `⚠️ Usage: *!promote [@mention or reply] [moderator|officer]*`, msg);
         return;

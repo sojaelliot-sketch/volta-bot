@@ -1,10 +1,10 @@
 // commands/staff.js
-//   !giveaway [amount] [winners] — owner/officer/moderator (limited)
-//   !tournament start [cat] [prize] — owner/officer/moderator; opens join window
-//       cat: classic | penalty   (default classic)
-//   !join                        — any registered user joins the open tournament
-//   !tourneyplay                 — resolve your current bracket tie (simulated)
-//   !tournament end              — owner/officer closes joins & builds the bracket
+//   !giveaway [amount] [winners] — owner/officer/moderator
+//   !tournament start [cat] [prize] — opens join window
+//   !tournament end — closes joins & builds bracket
+//   !tournament prize [amount] — adjust prize pool before start
+//   !join — join the open tournament
+//   !tourneyplay — simulate your current bracket tie
 const User = require('../models/User');
 const { GIVEAWAY, TOURNAMENT, BRAND } = require('../config/constants');
 const { sendText } = require('../utils/messaging');
@@ -13,6 +13,8 @@ const tourney = require('../game-engine/tournament');
 let lastGiveaway = 0;
 let lastTournament = 0;
 let joinTimer = null;
+let customJoinWindowMs = null;   // staff-adjustable join window
+let customMatchWindowMs = null;  // staff-adjustable match window
 
 function canHost(sender) {
   if (User.isOwner(sender)) return true;
@@ -24,15 +26,33 @@ function announceBracket(sock, t) {
   const rounds = t.rounds || [];
   let out = `🏆 *TOURNAMENT BRACKET* (${TOURNAMENT.CATEGORIES[t.category]?.label || t.category})\n`;
   out += `━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  out += `💲 Prize: *${t.prize}* MW   👥 ${t.playerCount || t.players?.length || 0} players\n`;
+  out += `🥇 1st: *${t.prize}* MW  🥈 2nd: *${Math.round(t.prize * 0.25)}* MW\n`;
+  if (t.playerCount >= 3) {
+    out += `🥉 3rd: *${Math.round(t.prize * 0.10)}* MW\n`;
+  }
+  out += `━━━━━━━━━━━━━━━━━━━━━━━\n`;
+
   rounds.forEach((round, ri) => {
-    out += `*\nRound ${ri + 1}*\n`;
+    const firstMatch = round[0];
+    const label = firstMatch?.label || `Round ${ri + 1}`;
+    out += `\n*${label}*\n`;
     round.forEach((m) => {
       const a = m.winner ? (tourney.eff(m.a) === m.winner ? `✅ ${nameOf(m.a)}` : nameOf(m.a)) : nameOf(m.a);
       const b = m.winner ? (tourney.eff(m.b) === m.winner ? `✅ ${nameOf(m.b)}` : nameOf(m.b)) : nameOf(m.b);
-      out += `  ${a}  vs  ${b}\n`;
+      const tag = m.simulated ? ' (sim)' : '';
+      const status = m.winner ? ' ✔️' : (m.dueAt ? ' ⏳' : '');
+      out += `  ${a}  vs  ${b}${tag}${status}\n`;
     });
   });
-  out += `━━━━━━━━━━━━━━━━━━━━━━━\n💡 Resolve your tie by playing (!challenge / !penalty) — auto-sim if you miss the window.`;
+
+  // Show 3rd place match placeholder if applicable
+  if (t.thirdPlaceMatch && t.playerCount >= 3) {
+    out += `\n*🥉 3RD PLACE MATCH*\n  (awaiting semifinal results)\n`;
+  }
+
+  out += `━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  out += `💡 Play your tie with *!tchallenge* (PvP) or *!tourneyplay* (sim).`;
   sendText(sock, t.chatJid, out);
 }
 
@@ -45,7 +65,10 @@ function nameOf(x) {
 function startBracket(sock) {
   if (joinTimer) { clearTimeout(joinTimer); joinTimer = null; }
   if (tourney.start()) {
-    announceBracket(sock, tourney.summary());
+    const t = tourney.summary();
+    announceBracket(sock, t);
+    // Announce match order
+    setTimeout(() => tourney.announceMatchOrder(), 1500);
   } else {
     const chat = tourney.summary()?.chatJid;
     tourney.cancel();
@@ -100,11 +123,10 @@ async function handle({ sock, msg, jid, sender, cmd, args }) {
   if (cmd === 'tourneyplay') {
     if (!tourney.isActive()) { await sendText(sock, jid, `ℹ️ No tournament running.`, msg); return; }
     const t = tourney.summary();
-    // find this player's first pending tie
     const m = (t.rounds || []).flat().find(mm => !mm.winner && !mm.simulated && (tourney.eff(mm.a) === sender || tourney.eff(mm.b) === sender));
     if (!m) { await sendText(sock, jid, `ℹ️ You have no pending tie (or it already resolved).`, msg); return; }
     const opp = tourney.eff(m.a) === sender ? tourney.eff(m.b) : tourney.eff(m.a);
-    const winner = Math.random() < 0.5 ? sender : opp; // 50/50 simulated; real play via challenge/penalty overrides
+    const winner = Math.random() < 0.5 ? sender : opp;
     m.winner = winner; m.simulated = true;
     await sendText(sock, jid, `⚽ *${User.getByWhatsappId(sender)?.name}*'s tie simulated — winner: *${User.getByWhatsappId(winner)?.name}*.`, msg);
     return;
@@ -126,7 +148,6 @@ async function handle({ sock, msg, jid, sender, cmd, args }) {
       }
       if (tourney.isActive()) { await sendText(sock, jid, `⚠️ A tournament is already open.`, msg); return; }
 
-      // category + prize (order flexible): [cat] [prize] or [prize] [cat]
       let cat = 'classic';
       let prize = 1000;
       for (const a of args.slice(1)) {
@@ -135,16 +156,76 @@ async function handle({ sock, msg, jid, sender, cmd, args }) {
       }
       prize = Math.min(TOURNAMENT.MAX_PRIZE, Math.max(100, prize));
 
-      tourney.create({ category: cat, prize, host: sender, chatJid: jid, sock });
+      const joinWindowMs = customJoinWindowMs || TOURNAMENT.JOIN_WINDOW_MS;
+      tourney.create({ category: cat, prize, host: sender, chatJid: jid, sock, matchWindowMs: customMatchWindowMs });
       lastTournament = now;
-      joinTimer = setTimeout(() => startBracket(sock), TOURNAMENT.JOIN_WINDOW_MS);
+      joinTimer = setTimeout(() => startBracket(sock), joinWindowMs);
 
+      const joinMins = Math.round(joinWindowMs / 60000);
       await sendText(sock, jid,
         `🏆 *TOURNAMENT OPEN!* 🔥\n━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `🎮 Category: *${TOURNAMENT.CATEGORIES[cat].label}*\n` +
         `💲 Prize pool: *${prize}* Metaworks\n` +
-        `🎮 Type *!join* to enter (max ${TOURNAMENT.MAX_PLAYERS})\n` +
-        `⏳ Joins close in ${TOURNAMENT.JOIN_WINDOW_MS / 1000}s — then the bracket is drawn!\n━━━━━━━━━━━━━━━━━━━━━━━\n${BRAND}`, msg);
+        `🥇 1st: *${prize}* MW  🥈 2nd: *${Math.round(prize * 0.25)}* MW\n` +
+        `🥉 3rd: *${Math.round(prize * 0.10)}* MW (if 3+ players)\n` +
+        `👥 Type *!join* to enter (max ${TOURNAMENT.MAX_PLAYERS})\n` +
+        `⏰ Joins close in ${joinMins} min\n` +
+        `💡 Adjust with *!tournament time [min]* or *!tournament matchtime [min]*\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━\n${BRAND}`, msg);
+      return;
+    }
+
+    if (sub === 'prize') {
+      if (!canHost(sender)) {
+        await sendText(sock, jid, `⛔ Only staff can adjust the prize.`, msg);
+        return;
+      }
+      if (!tourney.isActive()) { await sendText(sock, jid, `ℹ️ No tournament open.`, msg); return; }
+      if (tourney.summary().rounds) { await sendText(sock, jid, `⚠️ Bracket already drawn — can't change prize now.`, msg); return; }
+      const newPrize = parseInt(args[1], 10);
+      if (!newPrize || isNaN(newPrize) || newPrize < 100) {
+        await sendText(sock, jid, `⚠️ Usage: *!tournament prize [amount]* (min 100)`, msg);
+        return;
+      }
+      const capped = Math.min(TOURNAMENT.MAX_PRIZE, newPrize);
+      const t = tourney.summary();
+      t.prize = capped;
+      await sendText(sock, jid,
+        `✅ Prize pool updated to *${capped}* Metaworks!\n` +
+        `🥇 1st: *${capped}* MW  🥈 2nd: *${Math.round(capped * 0.25)}* MW\n` +
+        `🥉 3rd: *${Math.round(capped * 0.10)}* MW`, msg);
+      return;
+    }
+
+    if (sub === 'time') {
+      if (!canHost(sender)) {
+        await sendText(sock, jid, `⛔ Only staff can adjust tournament time.`, msg);
+        return;
+      }
+      const mins = parseInt(args[1], 10);
+      if (!mins || isNaN(mins) || mins < 1 || mins > 60) {
+        const cur = (customJoinWindowMs || TOURNAMENT.JOIN_WINDOW_MS) / 60000;
+        await sendText(sock, jid, `⚠️ Usage: *!tournament time [1-60 minutes]*\nCurrent join window: *${cur} min*`, msg);
+        return;
+      }
+      customJoinWindowMs = mins * 60000;
+      await sendText(sock, jid, `✅ Join window set to *${mins} min*.`, msg);
+      return;
+    }
+
+    if (sub === 'matchtime') {
+      if (!canHost(sender)) {
+        await sendText(sock, jid, `⛔ Only staff can adjust match time.`, msg);
+        return;
+      }
+      const mins = parseInt(args[1], 10);
+      if (!mins || isNaN(mins) || mins < 1 || mins > 120) {
+        const cur = (customMatchWindowMs || TOURNAMENT.MATCH_WINDOW_MS) / 60000;
+        await sendText(sock, jid, `⚠️ Usage: *!tournament matchtime [1-120 minutes]*\nCurrent match window: *${cur} min*`, msg);
+        return;
+      }
+      customMatchWindowMs = mins * 60000;
+      await sendText(sock, jid, `✅ Match window set to *${mins} min*.`, msg);
       return;
     }
 
@@ -159,7 +240,26 @@ async function handle({ sock, msg, jid, sender, cmd, args }) {
       return;
     }
 
-    await sendText(sock, jid, `⚠️ Usage:\n*!tournament start [classic|penalty] [prize]*\n*!tournament end*`, msg);
+    if (sub === 'cancel') {
+      if (!canHost(sender)) {
+        await sendText(sock, jid, `⛔ Only staff can cancel a tournament.`, msg);
+        return;
+      }
+      if (!tourney.isActive()) { await sendText(sock, jid, `ℹ️ No tournament open.`, msg); return; }
+      tourney.cancel();
+      if (joinTimer) { clearTimeout(joinTimer); joinTimer = null; }
+      await sendText(sock, jid, `🚫 Tournament cancelled.`, msg);
+      return;
+    }
+
+    await sendText(sock, jid,
+      `⚠️ Usage:\n` +
+      `*!tournament start [classic|penalty] [prize]* — create tournament\n` +
+      `*!tournament prize [amount]* — adjust prize before start\n` +
+      `*!tournament time [1-60 min]* — set join window\n` +
+      `*!tournament matchtime [1-120 min]* — set match window\n` +
+      `*!tournament end* — draw bracket & start\n` +
+      `*!tournament cancel* — cancel the tournament`, msg);
     return;
   }
 
@@ -169,7 +269,8 @@ async function handle({ sock, msg, jid, sender, cmd, args }) {
     const u = User.getByWhatsappId(sender);
     if (!u || !u.registered) { await sendText(sock, jid, `❌ Register first!`, msg); return; }
     if (tourney.addPlayer(sender)) {
-      await sendText(sock, jid, `✅ *${u.name}* is IN! (${tourney.summary().players.length}/${TOURNAMENT.MAX_PLAYERS}) 🔥`, msg);
+      const count = tourney.summary().players.length;
+      await sendText(sock, jid, `✅ *${u.name}* is IN! (${count}/${TOURNAMENT.MAX_PLAYERS}) 🔥`, msg);
     } else {
       await sendText(sock, jid, `ℹ️ You're already in, or it's full.`, msg);
     }

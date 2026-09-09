@@ -2,6 +2,7 @@
 const User    = require('../models/User');
 const Player  = require('../models/Player');
 const engine  = require('./matchEngine');
+const chants  = require('./playerChants');
 const comm    = require('./commentary');
 const ai      = require('../ai/aiOpponent');
 const tourney = require('./tournament');
@@ -713,7 +714,7 @@ async function presentChance(s) {
   const defName  = defSide === 'home' ? s.homeName : s.awayName;
 
   const outfield = atkSquad.filter(p => p.role === 'outfield');
-  const player   = pick(outfield.length ? outfield : atkSquad);
+  const player   = engine.pickAttacker(outfield.length ? outfield : atkSquad, 'shoot');
   const ctx      = { player: Player.displayName(player) || player.name, team: atkName, opp: defName };
 
   s.attacker  = attackerSide;
@@ -865,7 +866,7 @@ async function resolveChance(s, sender, raw) {
   const atkSquad = attackerSide === 'home' ? s.homeSquad : s.awaySquad;
   const defSquad = defenderSide === 'home' ? s.homeSquad : s.awaySquad;
   const outfield = atkSquad.filter(p => p.role === 'outfield');
-  const player   = pick(outfield.length ? outfield : atkSquad);
+  const player   = engine.pickAttacker(outfield.length ? outfield : atkSquad, 'shoot');
   const ctx      = { player: Player.displayName(player) || player.name, team: atkName, opp: defName };
 
   const defOutfield = defSquad.filter(p => p.role === 'outfield');
@@ -994,6 +995,7 @@ async function finishPvP(s) {
   clearPvpTimer(s);
   pvpChances.delete(s.matchId);
   activeSessions.delete(s.matchId); // free both managers — was left stuck in a match
+  comm.endMatch(s.matchId);          // release this match's commentary history
 
   const pkApplies = (s.pkEnabled || s.isTournament) && !s.isAI && s.awayId && s.awayId !== 'AI';
   let pkResult = null;
@@ -1017,19 +1019,23 @@ async function finishPvP(s) {
 
   const homeReward = homeWon ? ECONOMY.WIN_REWARD : isDraw ? ECONOMY.DRAW_REWARD : ECONOMY.LOSS_REWARD;
   const awayReward = (winnerId === s.awayId) ? ECONOMY.WIN_REWARD : isDraw ? ECONOMY.DRAW_REWARD : ECONOMY.LOSS_REWARD;
+  const entryFee = ECONOMY.MATCH_ENTRY_FEE || 0;
   const homeMmr = homeWon ? MMR.WIN : isDraw ? MMR.DRAW : MMR.LOSS;
   const awayMmr = (winnerId === s.awayId) ? MMR.WIN : isDraw ? MMR.DRAW : MMR.LOSS;
 
   const h = User.getByWhatsappId(s.homeId) || {};
+  const homeLossStreak = !homeWon && !isDraw ? (h.lossStreak || 0) + 1 : 0;
+  const homeFine = homeLossStreak >= 3 ? Math.round(20 * (homeLossStreak - 2)) : 0;
   User.update(s.homeId, {
     inMatch: false, currentMatchId: null,
-    currency: (h.currency || 0) + homeReward,
+    currency: (h.currency || 0) + homeReward - homeFine,
     wins: (h.wins || 0) + (homeWon ? 1 : 0),
     losses: (h.losses || 0) + ((!homeWon && !isDraw) ? 1 : 0),
     draws: (h.draws || 0) + (isDraw ? 1 : 0),
     mmr: (h.mmr || 1000) + homeMmr,
     totalGoals: (h.totalGoals || 0) + s.homeScore,
     winStreak: homeWon ? (h.winStreak || 0) + 1 : 0,
+    lossStreak: homeLossStreak,
   });
   // Home rank can always change (home is always a real user).
   const hu = User.getByWhatsappId(s.homeId);
@@ -1050,15 +1056,19 @@ async function finishPvP(s) {
   // user record for it.
   if (!s.isAI) {
     const a = User.getByWhatsappId(s.awayId) || {};
+    const awayWon = winnerId === s.awayId;
+    const awayLossStreak = !awayWon && !isDraw ? (a.lossStreak || 0) + 1 : 0;
+    const awayFine = awayLossStreak >= 3 ? Math.round(20 * (awayLossStreak - 2)) : 0;
     User.update(s.awayId, {
       inMatch: false, currentMatchId: null,
-      currency: (a.currency || 0) + awayReward,
-      wins: (a.wins || 0) + ((winnerId === s.awayId) ? 1 : 0),
-      losses: (a.losses || 0) + ((!homeWon && !isDraw && winnerId !== s.awayId) ? 1 : 0),
+      currency: (a.currency || 0) + awayReward - awayFine,
+      wins: (a.wins || 0) + (awayWon ? 1 : 0),
+      losses: (a.losses || 0) + ((!awayWon && !isDraw) ? 1 : 0),
       draws: (a.draws || 0) + (isDraw ? 1 : 0),
       mmr: (a.mmr || 1000) + awayMmr,
       totalGoals: (a.totalGoals || 0) + s.awayScore,
-      winStreak: (winnerId === s.awayId) ? (a.winStreak || 0) + 1 : 0,
+      winStreak: awayWon ? (a.winStreak || 0) + 1 : 0,
+      lossStreak: awayLossStreak,
     });
     const au = User.getByWhatsappId(s.awayId);
     const newRankA = calcRank(au ? au.mmr : 1000);
@@ -1157,7 +1167,9 @@ async function finishPvP(s) {
     if (htChant) report += htChant + '\n';
   }
 
-  report += `\n💲 +${homeReward} (${s.homeName}) | +${awayReward} (${s.awayName})\n`;
+  report += `\n💲 +${homeReward - homeFine} (${s.homeName}) | +${awayReward - awayFine} (${s.awayName})\n`;
+  if (homeFine) report += `💸 *${s.homeName}* fined ${homeFine} MW for losing streak!\n`;
+  if (awayFine) report += `💸 *${s.awayName}* fined ${awayFine} MW for losing streak!\n`;
   if (mvp) report += `⭐ MVP: *${mvp.name}*${mvpBonus ? ` (+${mvpBonus})` : ''}\n`;
   report += `${resultTxt}\n━━━━━━━━━━━━━━━━━━━━━━━\n${BRAND}`;
 
@@ -1240,7 +1252,9 @@ function simulateChunk(session, count) {
     const opp    = isHome ? session.awaySquad : session.homeSquad;
 
     const attackerPool = squad.filter(p => p.role === 'outfield');
-    const attacker = pick(attackerPool.length ? attackerPool : squad);
+    // The action is decided below and depends on who has the ball, so this uses
+    // the general all-round weighting rather than an action-specific one.
+    const attacker = engine.pickAttacker(attackerPool.length ? attackerPool : squad);
 
     const action = (session.isAI && !isHome)
       ? ai.chooseAction(session, team, attacker)
@@ -1292,7 +1306,31 @@ function simulateChunk(session, count) {
       }
     }
 
-    lines.push(...comm.buildBurst(eventType, { player: attacker.displayName || attacker.name, team }, session.timeElapsed));
+    // Give the commentary the state of the game, not just a name. Without the
+    // scoreline and the match id it cannot tell a last-minute winner from a
+    // consolation, and every match in the process shares one line pool.
+    const forGoals     = isHome ? session.homeScore : session.awayScore;
+    const againstGoals = isHome ? session.awayScore : session.homeScore;
+    lines.push(...comm.buildBurst(eventType, {
+      player: attacker.displayName || attacker.name,
+      team,
+      matchId: session.matchId,
+      forGoals,
+      againstGoals,
+    }, session.timeElapsed));
+
+    // A chant, but only if the goal earned one. See game-engine/playerChants.js.
+    if (isGoal) {
+      const playerGoals = scorers.filter((x) => x.id === attacker.id).length;
+      const chantBlock = chants.chantOnGoal(attacker, {
+        minute: fm,
+        scorerTeam: forGoals,
+        otherTeam: againstGoals,
+        playerGoals,
+        isFinal: !!session.isFinal,
+      });
+      if (chantBlock) lines.push(chantBlock);
+    }
 
     // Injury roll — a player can go down at any moment.
     if (Math.random() < INJURY.CHANCE_PER_EVENT) {
@@ -1306,7 +1344,7 @@ function simulateChunk(session, count) {
     if (isGoal) {
       lines.push(comm.genZFlow('HYPE', { team }));
       // Fan chant on goal (simulated)
-      const scorerId = team === homeName ? session.homeId : session.awayId;
+      const scorerId = team === 'home' ? session.homeId : session.awayId;
       const chantBurst = getChantBurst(scorerId);
       if (chantBurst) lines.push(chantBurst);
     } else if (Math.random() < 0.35) {
@@ -1353,6 +1391,7 @@ async function endMatch(session) {
   const homeBonus = session.homeBonus || { currencyMult: 1, active: false };
   const homeReward = Math.round(homeRewardRaw * (homeBonus.active ? homeBonus.currencyMult : 1));
   const scale = mmrScale(session.aiDifficulty);
+  const entryFee = ECONOMY.MATCH_ENTRY_FEE || 0;
   const mmrDelta   = Math.round((homeWon ? MMR.WIN : isDraw ? MMR.DRAW : MMR.LOSS) * scale);
 
   const h = User.getByWhatsappId(homeId) || {};

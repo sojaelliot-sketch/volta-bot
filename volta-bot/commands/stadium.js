@@ -6,7 +6,7 @@
 const User = require('../models/User');
 const { STADIUM } = require('../config/constants');
 const { money } = require('../utils/formatter');
-const { sendText } = require('../utils/messaging');
+const { sendText, sendImageOrText } = require('../utils/messaging');
 const stadium = require('../utils/stadium');
 const logger = require('../utils/logger');
 
@@ -14,7 +14,7 @@ const STADIUM_KEYS = Object.keys(STADIUM.TIERS);
 
 function sendCard(sock, jid, buf, caption, msg) {
   try {
-    return sock.sendMessage(jid, { image: buf, caption }, { quoted: msg });
+    return sendImageOrText(sock, jid, buf, caption, msg, caption);
   } catch (err) {
     logger.error({ err }, 'stadium card render failed');
   }

@@ -115,11 +115,19 @@ function consecutiveDay(prev, now) {
   return hours >= 20 && hours <= 48;
 }
 
+// Raw stat total — kept because squad power and team value are built from it.
 function playerTotal(p) {
   if (!p || !p.stats) return 0;
   return p.role === 'goalkeeper'
     ? p.stats.reflex + p.stats.positioning + p.stats.anticipation + p.stats.strength + p.stats.composure
     : p.stats.pace + p.stats.skill + p.stats.shooting + p.stats.stamina + p.stats.composure;
+}
+
+// The rating a player is SHOWN. The website used to display the raw total (a
+// number like 277) while the bot showed 55 for the same player. Both now come
+// from the single formula the game plays with.
+function playerOVR(p) {
+  try { return Player.calculateOVR(p); } catch { return 0; }
 }
 
 function publicUser(u) {
@@ -136,6 +144,7 @@ function publicUser(u) {
     condition: p.condition,
     form: p.form,
     total: playerTotal(p),
+    ovr: playerOVR(p),
     isListed: !!p.isListed,
     stats: p.stats,
   }));
@@ -232,7 +241,7 @@ function marketProcessExpired() {
     const seller = User.getByWhatsappId(l.sellerId);
     if (player && seller) {
       const payout = Player.marketValue(player);
-      User.update(l.sellerId, { currency: (seller.currency || 0) + payout });
+      User.addCurrency(l.sellerId, payout);
       transfer.transferPlayer(player.id, l.sellerId, transfer.HOUSE);
     }
     db.update('market', l.id, { sold: true });
@@ -531,7 +540,8 @@ const server = http.createServer(async (req, res) => {
       const youth = u.youth || [];
       if (youth.length >= ACADEMY.SCOUT_SLOTS) return send(res, 400, { error: 'Academy full — promote a prospect first.' });
       const player = buildYouthPlayer(id);
-      User.update(id, { currency: (u.currency || 0) - ACADEMY.SCOUT_COST, youth: [...youth, player.id] });
+      User.addCurrency(id, -ACADEMY.SCOUT_COST);
+      User.update(id, { youth: [...youth, player.id] });
       reload();
       return send(res, 200, { ok: true, player: { id: player.id, name: player.name, role: player.role, total: playerTotal(player), potential: player.potential }, user: publicUser(db.findById('users', id)) });
     }
@@ -617,10 +627,10 @@ const server = http.createServer(async (req, res) => {
           error: 'Transfer blocked: this listing is invalid (seller no longer owns the player). It has been removed; no Metaworks were charged.',
         });
       }
-      User.update(id, { currency: (u.currency || 0) - listing.price });
+      User.addCurrency(id, -listing.price);
       if (listing.sellerId !== transfer.HOUSE) {
         const seller = User.getByWhatsappId(listing.sellerId);
-        if (seller) User.update(listing.sellerId, { currency: (seller.currency || 0) + listing.price });
+        if (seller) User.addCurrency(listing.sellerId, listing.price);
       }
       db.update('market', listing.id, { sold: true });
       reload();
@@ -724,7 +734,7 @@ const server = http.createServer(async (req, res) => {
       if ((u.currency || 0) < packConfig.cost) {
         return send(res, 400, { error: `Not enough Metaworks. Need ${packConfig.cost}.` });
       }
-      User.update(id, { currency: (u.currency || 0) - packConfig.cost });
+      User.addCurrency(id, -packConfig.cost);
       const opened = openPack(id, packConfig);
       const fresh = db.findById('users', id);
       const reserves = [...(fresh.reserves || []), ...opened.map((pl) => pl.id)];
@@ -757,11 +767,11 @@ const server = http.createServer(async (req, res) => {
       if ((u.currency || 0) < cost) return send(res, 400, { error: `Not enough Metaworks. Need ${cost}.` });
       if (type === 'energy') {
         if (player.condition >= 100) return send(res, 400, { error: `${player.nickname || player.name} is already at 100% condition.` });
-        User.update(id, { currency: (u.currency || 0) - cost });
+        User.addCurrency(id, -cost);
         Player.update(playerId, { condition: 100 });
       } else {
         if (player.form === 'Hot') return send(res, 400, { error: `${player.nickname || player.name} is already in Hot form.` });
-        User.update(id, { currency: (u.currency || 0) - cost });
+        User.addCurrency(id, -cost);
         Player.update(playerId, { form: 'Hot' });
       }
       reload();
@@ -799,7 +809,7 @@ const server = http.createServer(async (req, res) => {
       }
       const newVal = Math.min(currentVal + gain, TRAINING.STAT_CAP);
       if (newVal !== currentVal) Player.update(playerId, { stats: { ...player.stats, [stat]: newVal } });
-      User.update(id, { currency: (u.currency || 0) - cost });
+      User.addCurrency(id, -cost);
       reload();
       const nu = db.findById('users', id);
       const rp = publicUser(nu).roster.find((r) => r.id === playerId);
@@ -824,7 +834,7 @@ const server = http.createServer(async (req, res) => {
       const player = db.findById('players', playerId);
       if (!player || player.ownerId !== id) return send(res, 404, { error: 'Player not found in your squad.' });
       if ((u.currency || 0) < SHOP.RENAME_TOKEN) return send(res, 400, { error: `Not enough Metaworks. Need ${SHOP.RENAME_TOKEN}.` });
-      User.update(id, { currency: (u.currency || 0) - SHOP.RENAME_TOKEN });
+      User.addCurrency(id, -SHOP.RENAME_TOKEN);
       Player.update(playerId, { nickname: name });
       reload();
       return send(res, 200, { ok: true, user: publicUser(db.findById('users', id)) });
@@ -890,8 +900,8 @@ const server = http.createServer(async (req, res) => {
           const u = db.findById('users', id);
           let payout = 0;
           if (s.stake > 0) {
-            if (won) { payout = Math.round(s.stake * PENALTY.WIN_REWARD_MULT); User.update(id, { currency: (u.currency || 0) + payout }); }
-            else if (!draw) { User.update(id, { currency: Math.max(0, (u.currency || 0) - s.stake) }); payout = -s.stake; }
+            if (won) { payout = Math.round(s.stake * PENALTY.WIN_REWARD_MULT); User.addCurrency(id, payout); }
+            else if (!draw) { User.addCurrency(id, -s.stake, { allowNegative: true }); payout = -s.stake; }
           }
           s.result = won ? 'win' : draw ? 'draw' : 'lose';
           s.payout = payout;
@@ -929,7 +939,7 @@ const server = http.createServer(async (req, res) => {
       const predicted = pickFace === 'heads' || pickFace === 'tails';
       const win = predicted ? (face === pickFace) : (Math.random() < 0.5);
       const net = win ? amount : -amount;
-      User.update(id, { currency: (u.currency || 0) + net });
+      User.addCurrency(id, net, { allowNegative: true });
       reload();
       return send(res, 200, { ok: true, face, pick: predicted ? pickFace : null, win, amount, net, currency: db.findById('users', id).currency, user: publicUser(db.findById('users', id)) });
     }
@@ -941,7 +951,9 @@ const server = http.createServer(async (req, res) => {
       if (!id) return send(res, 401, { error: 'Not logged in.' });
       let stake = parseInt(body.stake, 10);
       if (!stake || isNaN(stake)) stake = SLOT.COST;
-      stake = Math.max(SLOT.COST, stake);
+      // Cap it, exactly as the bot does. Uncapped, a single request could
+      // shovel an entire balance through the machine.
+      stake = Math.max(SLOT.COST, Math.min(SLOT.MAX_STAKE || 5000, stake));
       reload();
       const u = db.findById('users', id);
       if ((u.currency || 0) < stake) return send(res, 400, { error: `Need ${stake} Metaworks to spin.` });
@@ -955,7 +967,7 @@ const server = http.createServer(async (req, res) => {
       }
       const payout = Math.round(stake * mult);
       const net = payout - stake;
-      User.update(id, { currency: (u.currency || 0) - stake + payout });
+      User.addCurrency(id, payout - stake, { allowNegative: true });
       reload();
       return send(res, 200, { ok: true, reels, mult, label, net, currency: db.findById('users', id).currency, user: publicUser(db.findById('users', id)) });
     }
@@ -1001,7 +1013,7 @@ const server = http.createServer(async (req, res) => {
       else if ((dir === 'higher' && next > first) || (dir === 'lower' && next < first)) { outcome = 'win'; net = Math.round(stake * mult) - stake; label = `You called ${dir.toUpperCase()}!`; }
       else { outcome = 'lose'; net = -stake; label = `Wrong! It was ${dir === 'higher' ? 'LOWER' : 'HIGHER'}.`; }
       reload();
-      User.update(id, { currency: (db.findById('users', id).currency || 0) + net });
+      User.addCurrency(id, net, { allowNegative: true });
       reload();
       return send(res, 200, { ok: true, first, next, dir, mult: +mult.toFixed(2), outcome, net, currency: db.findById('users', id).currency, user: publicUser(db.findById('users', id)) });
     }
@@ -1030,7 +1042,8 @@ const server = http.createServer(async (req, res) => {
       streak = (last && consecutiveDay(last, now)) ? streak + 1 : 1;
       const mult = 1 + (streak - 1) * (ECONOMY.STREAK_MULTIPLIER - 1);
       const reward = Math.min(Math.round(ECONOMY.DAILY_BASE * mult), ECONOMY.MAX_DAILY);
-      User.update(id, { currency: (u.currency || 0) + reward, lastDaily: now.toISOString(), dailyStreak: streak });
+      User.addCurrency(id, reward);
+      User.update(id, { lastDaily: now.toISOString(), dailyStreak: streak });
       reload();
       return send(res, 200, { ok: true, reward, streak, user: publicUser(db.findById('users', id)) });
     }
@@ -1132,7 +1145,7 @@ const server = http.createServer(async (req, res) => {
       const them = db.all('users').find((u) => u.registered && (u.name || '').trim().toLowerCase() === targetName);
       if (!them) return send(res, 404, { error: 'No registered manager with that team name.' });
       if (them.whatsappId === id) return send(res, 400, { error: 'You cannot set a bounty on yourself.' });
-      User.update(id, { currency: (me.currency || 0) - price });
+      User.addCurrency(id, -price);
       User.update(them.whatsappId, { bounty: (them.bounty || 0) + price });
       reload();
       return send(res, 200, { ok: true, target: them.name, price: (them.bounty || 0) + price });
@@ -1259,7 +1272,7 @@ const server = http.createServer(async (req, res) => {
       }
       const newVal = Math.min(currentVal + gain, TRAINING.STAT_CAP);
       if (newVal !== currentVal) Player.update(playerId, { stats: { ...player.stats, [stat]: newVal } });
-      User.update(id, { currency: (u.currency || 0) - cost });
+      User.addCurrency(id, -cost);
       reload();
       const nu = db.findById('users', id);
       const rp = publicUser(nu).roster.find((r) => r.id === playerId);
@@ -1282,8 +1295,8 @@ const server = http.createServer(async (req, res) => {
       const them = db.all('users').find((u) => u.registered && (u.name || '').trim().toLowerCase() === targetName);
       if (!them) return send(res, 404, { error: 'No registered manager with that team name.' });
       if (them.whatsappId === id) return send(res, 400, { error: 'You cannot tip yourself.' });
-      User.update(id, { currency: (me.currency || 0) - amount });
-      User.update(them.whatsappId, { currency: (them.currency || 0) + amount });
+      const xfer = User.transferCurrency(id, them.whatsappId, amount);
+      if (!xfer.ok) return send(res, 400, { error: 'Transfer failed — check your balance.' });
       reload();
       return send(res, 200, { ok: true, amount, to: them.name, user: publicUser(db.findById('users', id)) });
     }

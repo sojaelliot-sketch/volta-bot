@@ -65,6 +65,15 @@ const COMMANDS = {
   weeklyawards:  { usage: '!weeklyawards [post]',         desc: 'View weekly awards or post to group.' },
   formcheck:     { usage: '!formcheck @user',             desc: 'See opponent last 5 results (W-W-L-W-D).' },
   retire:        { usage: '!retire [confirm]',            desc: 'Retire your club and start fresh with legacy bonus.' },
+  compplay:      { usage: '!compplay [ucl/uel/ecl/fac/cc/cs/clib/ic]', desc: 'Play a competition match. Auto-detects from GC name.' },
+  compgcs:       { usage: '!compgcs',                     desc: 'List all competition GC links.' },
+  redeem:        { usage: '!redeem [CODE]',               desc: 'Claim a redeem code for free Metaworks.' },
+  captain:       { usage: '!captain [id]',                desc: 'Set your team captain (+5% match bonus, +2 OVR).' },
+  injuries:      { usage: '!injuries',                    desc: 'View injured players and recovery time.' },
+  teamchem:      { usage: '!teamchem',                    desc: 'View your team chemistry breakdown.' },
+  season:        { usage: '!season',                      desc: 'View league weekly season overview.' },
+  trophies:      { usage: '!trophies',                    desc: 'View your trophy cabinet.' },
+  compgcs:       { usage: '!compgcs',                     desc: 'List all competition GC links.' },
 };
 
 async function handle({ sock, msg, jid, cmd, args }) {

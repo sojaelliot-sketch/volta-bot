@@ -1,11 +1,13 @@
 const User = require('../models/User');
+const onboarding = require('../utils/onboarding');
 const logger = require('../utils/logger');
-const { sendText } = require('../utils/messaging');
+const { sendText, startTyping, stopTyping, smartTypingPause } = require('../utils/messaging');
 const stats = require('../utils/stats');
-const { MODERATION, RATELIMIT } = require('../config/constants');
+const { MODERATION, BRAND } = require('../config/constants');
 const { grantStarterSquad } = require('../utils/playerGenerator');
 const { isChatLocked, getActivePvPForUser } = require('../game-engine/matchSession');
-const { isEnabled: botEnabled, isAfk } = require('./botstate');
+const { isEnabled: botEnabled, isAfk, isCmdDisabled } = require('./botstate');
+
 
 const PREFIX = '!';
 
@@ -14,6 +16,7 @@ const handlers = {
   register: () => require('./start'),
   help: () => require('./help'),
   menu: () => require('./help'),
+  announce: () => require('./help'),
   squad: () => require('./squad'),
   lineup: () => require('./squad'),
   bench: () => require('./squad'),
@@ -51,6 +54,8 @@ const handlers = {
   wallet: () => require('./wallet'),
   bal: () => require('./wallet'),
   give: () => require('./give'),
+  subtract: () => require('./subtract'),
+  take: () => require('./subtract'),
   dash: () => require('./dash'),
   squads: () => require('./squads'),
   buysquad: () => require('./squads'),
@@ -63,6 +68,13 @@ const handlers = {
   penalty: () => require('./penalty'),
   shoot: () => require('./penalty'),
   save: () => require('./penalty'),
+  work: () => require('./work'),
+  jobs: () => require('./work'),
+  salary: () => require('./salary'),
+  interest: () => require('./salary'),
+  insurance: () => require('./insurance'),
+  contract: () => require('./contract'),
+  repair: () => require('./contract'),
   bid: () => require('./auction'),
   auction: () => require('./auction'),
   giveaway: () => require('./staff'),
@@ -100,12 +112,21 @@ const handlers = {
   pong: () => require('./pong'),
   tbet: () => require('./tbet'),
   debug: () => require('./debug'),
+  diag: () => require('./diag'),
+  agent: () => require('./agent'),
+  bargain: () => require('./agent'),
+  derby: () => require('./derby'),
+  borrow: () => require('./loan'),
+  lend: () => require('./loan'),
+
+  health: () => require('./diag'),
   setbounty: () => require('./setbounty'),
   academy: () => require('./academy'),
   scout: () => require('./academy'),
   youthpromote: () => require('./academy'),
   on: () => require('./botstate'),
   off: () => require('./botstate'),
+  disable: () => require('./botstate'),
   afk: () => require('./botstate'),
   reload: () => require('./reload'),
   clearpvp: () => require('./pvpadmin'),
@@ -115,6 +136,8 @@ const handlers = {
   ban: () => require('./mod'),
   unban: () => require('./mod'),
   warn: () => require('./mod'),
+  cooldown: () => require('./mod'),
+  uncooldown: () => require('./mod'),
   promote: () => require('./mod'),
   demote: () => require('./mod'),
   kick: () => require('./mod'),
@@ -134,35 +157,26 @@ const handlers = {
   weeklyawards: () => require('./weeklyawards'),
   formcheck: () => require('./formcheck'),
   retire: () => require('./retire'),
+  league: () => require('./league'),
+  captain: () => require('./captain'),
+  injuries: () => require('./injuries'),
+  season: () => require('./season'),
+  trophies: () => require('./trophies'),
+  teamchem: () => require('./teamchem'),
+  competitions: () => require('./tournament'),
+  compgcs: () => require('./compgcs'),
+  loan: () => require('./loan'),
+  awards: () => require('./awards'),
+  compplay: () => require('./compplay'),
+  redeem: () => require('./redeem'),
 };
 
-const PUBLIC_COMMANDS = new Set(['start', 'register', 'help', 'menu', 'top10', 'leaderboard', 'lb', 'invite']);
+const PUBLIC_COMMANDS = new Set(['start', 'register', 'help', 'menu', 'top10', 'leaderboard', 'lb', 'invite', 'announce']);
 
 // ─── spam / cooldown tracking ───────────────────────────────────────────────
 const lastCommandAt = new Map();   // sender -> timestamp
 const warnCount     = new Map();    // sender -> warnings
 const afkUsers      = new Set();    // sender -> muted until !afk off
-
-// ─── sliding-window rate limiter ────────────────────────────────────────────
-// Tracks recent command timestamps per sender. If a sender exceeds MAX_IN_WINDOW
-// commands within WINDOW_MS, they're throttled for BLOCK_MS. This catches a
-// sustained flood that individually respects the per-command cooldown.
-const windowHits = new Map();      // sender -> number[] of timestamps
-const blockedUntil = new Map();    // sender -> timestamp until which they're blocked
-
-function rateLimited(sender, now) {
-  const until = blockedUntil.get(sender) || 0;
-  if (now < until) return true;
-  const hits = (windowHits.get(sender) || []).filter((t) => now - t < RATELIMIT.WINDOW_MS);
-  hits.push(now);
-  windowHits.set(sender, hits);
-  if (hits.length > RATELIMIT.MAX_IN_WINDOW) {
-    blockedUntil.set(sender, now + RATELIMIT.BLOCK_MS);
-    windowHits.set(sender, []);
-    return true;
-  }
-  return false;
-}
 
 function isExempt(sender, user) {
   return User.isOwner(sender) || User.isStaff(user);
@@ -178,8 +192,23 @@ function extractText(message) {
     message.buttonsResponseMessage?.selectedButtonId ||
     message.listResponseMessage?.singleSelectReply?.selectedRowId ||
     message.templateButtonReplyMessage?.selectedId ||
+    // Modern native-flow reply. WhatsApp sends the tapped button's payload as
+    // JSON here; the command lives in `id`. Without this, taps on interactive
+    // messages were parsed as empty text and silently dropped.
+    nativeFlowId(message) ||
     ''
   );
+}
+
+function nativeFlowId(message) {
+  const raw = message?.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson;
+  if (!raw) return '';
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed.id || parsed.selectedId || parsed.selectedRowId || '';
+  } catch {
+    return '';
+  }
 }
 
 // Resolve a target user jid from a command context. Precedence:
@@ -188,7 +217,8 @@ function extractText(message) {
 //   3. the first @mention
 function looksLikeJid(arg) {
   if (!arg) return false;
-  return /^\d{6,}$/.test(arg) || arg.includes('@');
+  // Match phone numbers (6+ digits) or full JIDs (e.g. 1234567890@s.whatsapp.net)
+  return /^\d{6,}$/.test(arg) || /^\d+@s\.whatsapp\.net$/.test(arg);
 }
 
 // Resolve a target manager by an explicit jid/id, a reply, a @mention, or a
@@ -262,6 +292,8 @@ async function handle(sock, msg) {
     // Owner can always use all commands. Non-owners get commands but no fluff.
     const botAfk = isAfk();
 
+    let user = User.getByWhatsappId(sender);
+
     // ── reply / mention target resolution ──
     // A command can target another user by: replying to their message,
     // @mentioning them, or passing their id/number as the first arg.
@@ -276,13 +308,25 @@ async function handle(sock, msg) {
 
     logger.info({ jid, sender, cmd, args }, `cmd: ${cmd}`);
 
-    let user = User.getByWhatsappId(sender);
+    // Terminal log: only show commands with prefix (clean format)
+    const senderName = User.getByWhatsappId(sender)?.name || sender.split('@')[0];
+    console.log(`[CMD] ${senderName}: !${cmd} ${args.join(' ')}`.trim());
 
     // ── ban check ──
     if (User.isBanned(user)) {
       const ms = User.banRemainingMs(user);
       const mins = Math.ceil(ms / 60000);
       await sendText(sock, jid, `🚫 You are banned. Try again in about *${mins} min*.`, msg);
+      return;
+    }
+
+    // ── cooldown check ──
+    // Staff are exempt from cooldowns. Cooldown blocks all commands except
+    // uncooldown (so staff can remove it).
+    if (User.isOnCooldown(user) && !User.isStaff(user) && !User.isOwner(sender) && cmd !== 'uncooldown') {
+      const ms = User.cooldownRemainingMs(user);
+      const mins = Math.ceil(ms / 60000);
+      await sendText(sock, jid, `⏳ You are on cooldown. Try again in about *${mins} min*.`, msg);
       return;
     }
 
@@ -350,13 +394,6 @@ async function handle(sock, msg) {
       }
       lastCommandAt.set(sender, now);
       warnCount.delete(sender);
-
-      // ── sliding-window flood cap (on top of the cooldown) ──
-      // Owner/staff are never blocked, but everyone is counted.
-      if (rateLimited(sender, now) && !isExempt(sender, user)) {
-        await sendText(sock, jid, `🐢 You're sending commands too fast. Take a short break and try again in a moment.`, msg);
-        return;
-      }
     }
 
     // ── PvP command lock ──
@@ -367,9 +404,29 @@ async function handle(sock, msg) {
       return;
     }
 
+    // !skiptour is handled inline rather than as a command file — it is one
+    // line and only matters during a manager's first session. It must sit
+    // above the unknown-command guard or it never reaches here.
+    if (cmd === 'skiptour') {
+      onboarding.skip(sender);
+      await sendText(sock, jid, `👍 Tour skipped. Send *!help* whenever you want the full list.`, msg);
+      return;
+    }
+
     const getHandler = handlers[cmd];
     if (!getHandler) {
-      await sendText(sock, jid, `❓ Unknown command *!${cmd}*. Send *!help* to see everything I can do.`, msg);
+      // Suggest something instead of dead-ending on a typo.
+      let hint = '';
+      try {
+        const { COMMANDS } = require('../config/commandIndex');
+        const names = Object.keys(COMMANDS);
+        const near = [
+          ...names.filter((n) => n.startsWith(cmd.slice(0, 3))),
+          ...names.filter((n) => n.includes(cmd) && !n.startsWith(cmd.slice(0, 3))),
+        ].slice(0, 3);
+        if (near.length) hint = `\n\nDid you mean: ${near.map((n) => `*!${n}*`).join('  ')}`;
+      } catch { /* index unavailable — fall back to the plain message */ }
+      await sendText(sock, jid, `❓ There's no *!${cmd}*.${hint}\n\nSend *!help* to see everything.`, msg);
       return;
     }
 
@@ -385,9 +442,36 @@ async function handle(sock, msg) {
       return;
     }
 
+    // ── disabled command check ──
+    if (isCmdDisabled(cmd) && !User.isOwner(sender)) {
+      await sendText(sock, jid, `🚫 The command *!${cmd}* is currently disabled by the owner.`, msg);
+      return;
+    }
+
+    // ── !skiptour ──
+    if (cmd === 'skiptour') {
+      onboarding.skip(sender);
+      await sendText(sock, jid, `👍 Tour skipped. *!help* whenever you need it.`, msg);
+      return;
+    }
+
     const mod = getHandler();
     stats.commandAnswered();
+    // Smart typing pause: shows "typing..." for a natural duration based on
+    // expected response length, then sends the response.
+    await smartTypingPause(sock, jid, 150);
     await mod.handle({ sock, msg, jid, sender, cmd, args, user, replyTo, mentioned });
+
+    // A new manager gets ONE instruction after each step they complete, rather
+    // than a wall of 96 commands at registration. Never fails the command.
+    // Only touches the database when a step is actually completed. `user` is
+    // the record already loaded above — do not re-fetch it here.
+    try {
+      const nudge = onboarding.advance(user, cmd);
+      if (nudge) await sendText(sock, jid, nudge);
+    } catch (err) {
+      logger.error({ err }, 'Onboarding nudge failed');
+    }
   } catch (err) {
     stats.issueFound(err);
     logger.error({ err }, 'Error handling message');

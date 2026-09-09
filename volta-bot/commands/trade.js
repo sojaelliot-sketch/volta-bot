@@ -39,18 +39,18 @@ async function handle({ sock, msg, jid, sender, args, replyTo, mentioned }) {
     // Verify both cards still exist
     const myCard = Player.getById(pending.theirCard);
     const theirCard = Player.getById(pending.yourCard);
-    if (!myCard || myCard.owner !== sender) {
+    if (!myCard || myCard.ownerId !== sender) {
       await sendText(sock, jid, `❌ You no longer have *${pending.theirCard}*.`, msg);
       return;
     }
-    if (!theirCard || theirCard.owner !== pending.from) {
+    if (!theirCard || theirCard.ownerId !== pending.from) {
       await sendText(sock, jid, `❌ They no longer have *${pending.yourCard}*.`, msg);
       return;
     }
 
     // Execute trade — swap owners
-    Player.update(pending.theirCard, { owner: pending.from });
-    Player.update(pending.yourCard, { owner: sender });
+    Player.update(pending.theirCard, { ownerId: pending.from });
+    Player.update(pending.yourCard, { ownerId: sender });
 
     // Swap in squads
     const removeFromUser = (u, id) => {

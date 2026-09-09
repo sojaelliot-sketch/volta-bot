@@ -2,6 +2,7 @@
 //   !leaderboard [category] / !lb [category] — ranked managers
 //   Categories: mmr (default) | wins | goals | rich | winrate
 const User = require('../models/User');
+const League = require('../models/League');
 const { BRAND } = require('../config/constants');
 const { sendText } = require('../utils/messaging');
 
@@ -51,13 +52,18 @@ async function handle({ sock, msg, jid, sender, args }) {
   top.forEach((u, i) => {
     const medal = MEDALS[i] || `${i + 1}.`;
     const crown = User.isOwner(u.whatsappId) ? ' 👑' : '';
-    out += `${medal} *${u.name}*${crown} — ${cat.fmt(cat.get(u))} (${u.rank || 'Bronze'})\n`;
+    // Get division info
+    const divInfo = League.getPlayerDivision(u.whatsappId);
+    const divText = divInfo ? ` [D${divInfo.division}]` : '';
+    out += `${medal} *${u.name}*${crown}${divText} — ${cat.fmt(cat.get(u))} (${u.rank || 'Bronze'})\n`;
   });
 
    const me = User.getByWhatsappId(sender);
    const myPos = ranked.findIndex(u => User.normalizeJid(u.whatsappId) === User.normalizeJid(sender)) + 1;
   if (me?.registered && myPos) {
-    out += `\n━━━━━━━━━━━━━━━━━━━━━━━\n📍 You: #${myPos} of ${ranked.length} — ${cat.fmt(cat.get(me))}`;
+    const myDiv = League.getPlayerDivision(sender);
+    const divText = myDiv ? ` [D${myDiv.division}]` : '';
+    out += `\n━━━━━━━━━━━━━━━━━━━━━━━\n📍 You: #${myPos} of ${ranked.length}${divText} — ${cat.fmt(cat.get(me))}`;
   }
   out += `\n━━━━━━━━━━━━━━━━━━━━━━━\n${BRAND}`;
 

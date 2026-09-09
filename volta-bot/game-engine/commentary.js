@@ -3,13 +3,37 @@ const { toFootballMinute } = require('./matchEngine');
 const { BRAND } = require('../config/constants');
 const { GEN_Z, fillLine: fillGenZ } = require('./commentaryGenZ');
 
-// Per-process recent-line tracker: keeps the last RECENT_CAP lines so a given
-// match never repeats commentary within its own flow (matches run over a few
-// seconds and a 40-line window comfortably covers one match).
-const recent = new Set();
+// Recent-line tracking, scoped PER MATCH.
+//
+// This used to be a single module-level Set shared by every match in the
+// process. Two games running in different groups at the same time ate each
+// other's pool: match A would use a goal sequence, and match B — a completely
+// separate game between different people — was then barred from it. With six
+// goal sequences and two live matches, both ended up recycling lines almost
+// immediately, which is exactly the "commentary repeats itself" complaint.
+//
+// Keyed by match id, with a hard cap so a long-running process cannot leak.
 const RECENT_CAP = 40;
+const MATCH_CAP = 60;
+const recentByMatch = new Map();
 
-function remember(lines) {
+function bucket(matchId) {
+  const key = matchId || 'default';
+  let set = recentByMatch.get(key);
+  if (!set) {
+    set = new Set();
+    recentByMatch.set(key, set);
+    // Evict the oldest match once too many have accumulated.
+    if (recentByMatch.size > MATCH_CAP) {
+      const oldest = recentByMatch.keys().next().value;
+      if (oldest !== undefined) recentByMatch.delete(oldest);
+    }
+  }
+  return set;
+}
+
+function remember(lines, matchId) {
+  const recent = bucket(matchId);
   for (const l of lines) if (l) recent.add(l);
   while (recent.size > RECENT_CAP) {
     const first = recent.values().next().value;
@@ -17,9 +41,15 @@ function remember(lines) {
     recent.delete(first);
   }
 }
-function notRecent(pool, keyFn) {
+function notRecent(pool, keyFn, matchId) {
+  const recent = bucket(matchId);
   const fresh = pool.filter((item) => !recent.has(keyFn(item)));
   return fresh.length ? fresh : pool;
+}
+
+/** Drop a match's line history when it finishes. */
+function endMatch(matchId) {
+  if (matchId) recentByMatch.delete(matchId);
 }
 
 const SEQUENCES = {
@@ -54,6 +84,66 @@ const SEQUENCES = {
       '*{player}* cleans up the scrap...',
       'snaps it first time! 💥',
       '⚽ *GOAL!* The place goes NUTS! 🏟️',
+    ],
+    [
+      '🧠 *{player}* stands it up, waits for the run…',
+      'nods it back into his own path 😮',
+      '⚽ *GOAL!* He created that out of absolutely nothing! 🎨',
+    ],
+    [
+      '*{player}* gambles on the rebound…',
+      'keeper spills it and he is FIRST to react ⚡',
+      '⚽ *GOAL!* Poacher\'s instinct — right place, right time! 🦊',
+    ],
+    [
+      '🚀 *{player}* from a LONG way out…',
+      'he has actually gone for this! 😳',
+      '⚽ *GOAL!!* From distance! What is he doing shooting from there?! 🤯',
+    ],
+    [
+      '*{player}* wins it back in midfield…',
+      'drives at the heart of them, nobody closes 🏃',
+      '⚽ *GOAL!* Straight up the middle and it is in! 💢',
+    ],
+    [
+      '↩️ *{player}* peels off the back post…',
+      'nobody picked him up. Nobody. 🫥',
+      '⚽ *GOAL!* Free header, and the defenders are already arguing! 😤',
+    ],
+    [
+      '🦶 *{player}* on his weaker foot here…',
+      'he does not care — swings anyway',
+      '⚽ *GOAL!* On the wrong foot and it is in the corner! 🎯',
+    ],
+    [
+      '*{player}* is bundled over on the edge… play on!',
+      'he keeps his feet, keeps going 💪',
+      '⚽ *GOAL!* Should have gone down and instead he scored! 🔥',
+    ],
+    [
+      '⚙️ *{player}* one-two on the angle…',
+      'gets it straight back and squeezes it near post 📐',
+      '⚽ *GOAL!* Keeper will not enjoy watching that one back. 😬',
+    ],
+    [
+      '*{player}* dinks it… cheeky 😏',
+      'the keeper is stranded, watching it drop…',
+      '⚽ *GOAL!* Audacity! Absolute audacity! 🪄',
+    ],
+    [
+      '🌪️ *{player}* whips it in with the outside of the boot…',
+      'it is bending, it is bending…',
+      '⚽ *GOAL!* That ball had a MIND of its own! 🌀',
+    ],
+    [
+      '*{player}* gets a toe on it in the scramble…',
+      'it trickles… agonisingly slowly… 🐌',
+      '⚽ *GOAL!* Over the line! Scruffy, and they all count! 🙌',
+    ],
+    [
+      '💀 *{player}* robs the defender who took one touch too many…',
+      'rolls it into the empty net 🥅',
+      '⚽ *GOAL!* Punished! That is a horror show at the back! 😵',
     ],
   ],
 
@@ -235,22 +325,52 @@ const ATMOSPHERE = [
   '😤 Frustration building, chances keep coming.',
 ];
 
+// A goal means different things depending on when it lands and what it does to
+// the scoreline. Previously every goal got the same six-sequence treatment, so
+// a consolation in a 5-0 rout read exactly like a last-minute winner. This adds
+// one line of context AFTER the sequence, which is cheap and does most of the
+// work of making a match feel like it has a story.
+function scorelineNote(ctx) {
+  const { forGoals, againstGoals, minute } = ctx;
+  if (typeof forGoals !== 'number' || typeof againstGoals !== 'number') return null;
+
+  const lead = forGoals - againstGoals;
+  const late = minute >= 80;
+  const veryLate = minute >= 88;
+
+  if (veryLate && lead === 1) return '🚨 *That could be the last kick of the game.*';
+  if (late && lead === 0)     return '😱 *They have levelled it with almost no time left!*';
+  if (lead === 0 && forGoals >= 2) return '🔥 *All the way back — this is level again.*';
+  if (lead === 1 && forGoals === 1 && againstGoals === 0 && minute <= 15) return '⚡ *An early one. Game on.*';
+  if (lead >= 4)  return '😬 *This is getting embarrassing now.*';
+  if (lead === 3) return '💪 *Three clear. Comfortable.*';
+  if (lead === -1 && late) return '⏳ *Still behind, and the clock is not helping.*';
+  if (lead === -2) return '🙃 *A goal back, but there is work to do.*';
+  return null;
+}
+
 function buildBurst(eventType, ctx = {}, elapsed = 0) {
   const pool = SEQUENCES[eventType];
   if (!pool) return [`⚽ ${eventType}`];
 
   const keyFn = (seq) => seq.join('|');
-  const sequence = pick(notRecent(pool, keyFn));
-  remember([keyFn(sequence)]);
+  const sequence = pick(notRecent(pool, keyFn, ctx.matchId));
+  remember([keyFn(sequence)], ctx.matchId);
   const minute   = toFootballMinute(elapsed);
   const prefix   = `⏱️ ${minute}'`;
 
-  return sequence.map((line, i) => {
+  const out = sequence.map((line, i) => {
     const filled = line
       .replace(/{player}/g, ctx.player || 'The player')
       .replace(/{team}/g,   ctx.team   || 'The team');
     return i === 0 ? `${prefix} — ${filled}` : filled;
   });
+
+  if (eventType === 'goal') {
+    const note = scorelineNote({ ...ctx, minute });
+    if (note) out.push(note);
+  }
+  return out;
 }
 
 // Extra crowd/tension lines that only make sense deep into the match, so the
@@ -327,6 +447,8 @@ ${scenario}
 
 module.exports = {
   buildBurst,
+  endMatch,
+  scorelineNote,
   atmosphereLine,
   genZFlow,
   buildMatchReport,

@@ -2,7 +2,10 @@
 // Renders a premium, holographic FUT/FIFA-style player card as a PNG buffer.
 // METAWORKS dark cyberpunk/neon aesthetic — rarity drives the entire look:
 // pattern, foil shine, glow color, and aura all change per tier.
-const { createCanvas } = require('canvas');
+const safeCanvas = require('./safeCanvas');
+const createCanvas = safeCanvas.createCanvas;
+// Resolved lazily: 'Volta, sans-serif' when assets/fonts/ holds faces, else 'sans-serif'.
+const FONT = () => safeCanvas.fontFamily();
 const Player = require('../models/Player');
 const { RARITY } = require('../config/constants');
 
@@ -110,11 +113,14 @@ function makeRng(seed) {
 
 // ─── OVERALL RATING ───────────────────────────────────────────────────────────
 
+// PHASE DRIFT: this used to be its own formula, so the same player showed a
+// different rating on his card than in !squad — e.g. 73 on the card, 55 in the
+// squad list, and a raw stat total of 277 on the website. Three phases, three
+// ideas of what OVR meant. Player.calculateOVR is the one the game actually
+// plays with (it accounts for level, form, captaincy, injury and condition),
+// so the card now shows that number and nothing else.
 function overallRating(player) {
-  const total = Player.totalStats(player);
-  const maxTotal = 99 * 5;
-  const ovr = Math.round(40 + (total / maxTotal) * 59);
-  return Math.max(40, Math.min(99, ovr));
+  return Player.calculateOVR(player);
 }
 
 // ─── BACKGROUND + PATTERN LAYERS ─────────────────────────────────────────────
@@ -275,7 +281,7 @@ function drawTopBlock(ctx, player, palette, ovr) {
   ctx.save();
   ctx.shadowColor = palette.glowStrong;
   ctx.shadowBlur = 18;
-  ctx.font = '800 76px sans-serif';
+  ctx.font = `800 76px ${FONT()}`;
   ctx.fillStyle = palette.ratingColor;
   ctx.fillText(String(ovr), x, y);
   ctx.restore();
@@ -285,7 +291,7 @@ function drawTopBlock(ctx, player, palette, ovr) {
   ctx.strokeText(String(ovr), x, y);
 
   const posLabel = player.role === 'goalkeeper' ? 'GK' : 'OUT';
-  ctx.font = '800 22px sans-serif';
+  ctx.font = `800 22px ${FONT()}`;
   ctx.fillStyle = palette.accent;
   ctx.fillText(posLabel, x + 2, y + 34);
 
@@ -299,7 +305,7 @@ function drawTopBlock(ctx, player, palette, ovr) {
   ctx.lineWidth = 1;
   ctx.stroke();
   ctx.textAlign = 'center';
-  ctx.font = '700 13px sans-serif';
+  ctx.font = `700 13px ${FONT()}`;
   ctx.fillStyle = '#fff';
   ctx.fillText(nCode, x + 23, chipY + 17);
 
@@ -318,11 +324,11 @@ function drawTopBlock(ctx, player, palette, ovr) {
   ctx.lineWidth = 1.4;
   ctx.stroke();
 
-  ctx.font = '800 20px sans-serif';
+  ctx.font = `800 20px ${FONT()}`;
   ctx.fillStyle = palette.accent;
   ctx.fillText(`${palette.motif}  ${player.rarity.toUpperCase()}  ${emoji}`, rx - 18, ry + 29);
 
-  ctx.font = '600 12px sans-serif';
+  ctx.font = `600 12px ${FONT()}`;
   ctx.fillStyle = 'rgba(255,255,255,0.55)';
   ctx.fillText('𝙈𝙀𝙏𝘼𝙒𝙊𝙍𝙆𝙎™ · VOLTA', rx - 18, ry + 62);
 }
@@ -416,7 +422,7 @@ function drawSilhouette(ctx, player, palette) {
 
   // Role icon on the chest, small glass badge
   ctx.textAlign = 'center';
-  ctx.font = '700 34px sans-serif';
+  ctx.font = `700 34px ${FONT()}`;
   ctx.fillStyle = palette.accent;
   ctx.save();
   ctx.shadowColor = palette.glow;
@@ -474,10 +480,10 @@ function drawNamePlate(ctx, player, palette) {
 
   ctx.textAlign = 'center';
   let fontSize = 32;
-  ctx.font = `800 ${fontSize}px sans-serif`;
+  ctx.font = `800 ${fontSize}px ${FONT()}`;
   while (ctx.measureText(name).width > plateW - 50 && fontSize > 16) {
     fontSize -= 2;
-    ctx.font = `800 ${fontSize}px sans-serif`;
+    ctx.font = `800 ${fontSize}px ${FONT()}`;
   }
   ctx.fillStyle = palette.nameColor;
   ctx.save();
@@ -486,7 +492,7 @@ function drawNamePlate(ctx, player, palette) {
   ctx.fillText(name, W / 2, y + 32);
   ctx.restore();
 
-  ctx.font = '600 15px sans-serif';
+  ctx.font = `600 15px ${FONT()}`;
   ctx.fillStyle = 'rgba(255,255,255,0.65)';
   ctx.fillText(`Age ${player.age} · Lv.${player.level} · ${player.potential} Potential`, W / 2, y + 54);
 }
@@ -497,7 +503,7 @@ function drawPotentialStars(ctx, player, palette) {
   const stars = POTENTIAL_STARS[player.potential] || 1;
   const y = 640;
   ctx.textAlign = 'center';
-  ctx.font = '20px sans-serif';
+  ctx.font = `20px ${FONT()}`;
   let str = '';
   for (let i = 0; i < 5; i++) str += i < stars ? '★' : '☆';
   ctx.fillStyle = palette.accent;
@@ -524,7 +530,7 @@ function drawStats(ctx, player, palette) {
     const value = player.stats[statKey] ?? 0;
 
     ctx.textAlign = 'left';
-    ctx.font = '800 15px sans-serif';
+    ctx.font = `800 15px ${FONT()}`;
     ctx.fillStyle = palette.accent;
     ctx.fillText(label, labelX, y + 12);
 
@@ -554,7 +560,7 @@ function drawStats(ctx, player, palette) {
     ctx.restore();
 
     ctx.textAlign = 'right';
-    ctx.font = '800 17px sans-serif';
+    ctx.font = `800 17px ${FONT()}`;
     ctx.fillStyle = palette.ratingColor;
     ctx.fillText(String(value), barX + barW + 40, y + 13);
   });
@@ -594,18 +600,18 @@ function drawFooter(ctx, player, palette) {
     ctx.stroke();
 
     ctx.textAlign = 'center';
-    ctx.font = '700 12px sans-serif';
+    ctx.font = `700 12px ${FONT()}`;
     ctx.fillStyle = 'rgba(255,255,255,0.55)';
     ctx.fillText(b.label, x + slotW / 2, y + 26);
 
-    ctx.font = '800 22px sans-serif';
+    ctx.font = `800 22px ${FONT()}`;
     ctx.fillStyle = b.color;
     ctx.fillText(String(b.value), x + slotW / 2, y + 54);
   });
 
   const mvY = y + 92;
   const mvText = `${Player.marketValue(player).toLocaleString('en-US')} MARKET VALUE`;
-  ctx.font = '700 16px sans-serif';
+  ctx.font = `700 16px ${FONT()}`;
   const mvW = ctx.measureText(mvText).width + 70;
   roundRect(ctx, (W - mvW) / 2, mvY, mvW, 38, 19);
   ctx.fillStyle = palette.glow;
@@ -652,4 +658,4 @@ function renderPlayerCard(player) {
   return canvas.toBuffer('image/png');
 }
 
-module.exports = { renderPlayerCard, overallRating };
+module.exports = { renderPlayerCard: safeCanvas.guard('renderPlayerCard', renderPlayerCard), overallRating };

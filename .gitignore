@@ -7,6 +7,8 @@ volta-bot/data/*.json
 volta-bot/data/backups/
 volta-bot/logs/
 volta-bot/.env
+volta-bot/a.txt
+volta-bot/data/a.txt
 volta-bot/*.log
 volta-bot/npm-debug.log*
 

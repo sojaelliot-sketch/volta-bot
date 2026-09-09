@@ -1,0 +1,26 @@
+plugins = []
+headers = []
+redirects = []
+
+[functions]
+
+[functions."*"]
+
+[build]
+publish = "C:\\Users\\Hp\\Documents\\volta-bot-phases-1-4. claude mad this one but fixed by vs code\\volta-bot"
+publishOrigin = "default"
+base = "C:\\Users\\Hp\\Documents\\volta-bot-phases-1-4. claude mad this one but fixed by vs code\\volta-bot"
+
+[build.environment]
+
+[build.processing]
+
+[build.processing.css]
+
+[build.processing.html]
+
+[build.processing.images]
+
+[build.processing.js]
+
+[build.services]

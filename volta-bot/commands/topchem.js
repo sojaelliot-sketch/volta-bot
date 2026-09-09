@@ -35,7 +35,7 @@ async function handle({ sock, msg, jid, sender, args }) {
     const emoji = RARITY[p.rarity]?.emoji || '⚪';
     const l = listingByPlayer[p.id];
     text += `${i + 1}. ${emoji} *${p.name}* — 🤝 ${p.chemistry || 0}% chem\n`;
-    text += `   ${p.rarity} · ${clubName(p.ownerId)} · OVR ${Player.totalStats(p)}\n`;
+    text += `   ${p.rarity} · ${clubName(p.ownerId)} · OVR ${Player.calculateOVR(p)}\n`;
     text += l ? `   💰 ${money(l.price)} · 🆔 \`${l.id.slice(0, 6)}\` — *!buy ${l.id.slice(0, 6)}*\n` : `   (not on the market)\n`;
   });
   text += `━━━━━━━━━━━━━━━━━━━━━━\n💡 Chemistry grows each match a player features in.`;

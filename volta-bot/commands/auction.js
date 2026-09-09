@@ -13,6 +13,7 @@ const { sendText } = require('../utils/messaging');
 
 let active = null;          // current auction
 let endTimer = null;
+let customDurationMs = null; // staff-adjustable auction duration
 
 function canHost(sender) {
   if (User.isOwner(sender)) return true;
@@ -53,7 +54,7 @@ function endAuction(sock) {
 
   // Pay the winner's bid; the host (auctioneer) collects the proceeds.
   User.update(a.highestBidder, { currency: (winner.currency || 0) - a.highestBid });
-  User.update(a.host, { currency: (User.getByWhatsappId(a.host)?.currency || 0) + a.highestBid });
+  User.addCurrency(a.host, a.highestBid);
 
   // Transfer the player from its CURRENT owner (the house for "auto", or the
   // player's existing owner for a specific id) into the winner's reserves. This
@@ -74,6 +75,21 @@ function endAuction(sock) {
 async function handle({ sock, msg, jid, sender, cmd, args }) {
   if (cmd === 'auction') {
     const sub = (args[0] || '').toLowerCase();
+
+    if (sub === 'time') {
+      if (!canHost(sender)) {
+        await sendText(sock, jid, `⛔ Only the Owner or an Officer can adjust auction time.`, msg);
+        return;
+      }
+      const secs = parseInt(args[1], 10);
+      if (!secs || isNaN(secs) || secs < 10 || secs > 600) {
+        await sendText(sock, jid, `⚠️ Usage: *!auction time [10-600 seconds]*\nCurrent: *${(customDurationMs || AUCTION.DURATION_MS) / 1000}s*`, msg);
+        return;
+      }
+      customDurationMs = secs * 1000;
+      await sendText(sock, jid, `✅ Auction duration set to *${secs}s*.`, msg);
+      return;
+    }
 
     if (sub === 'start') {
       if (!canHost(sender)) {
@@ -123,15 +139,16 @@ async function handle({ sock, msg, jid, sender, cmd, args }) {
         item = buildPlayer(sender, AUCTION.HIGH_PLAYER_RARITY);
       }
 
-      active = { itemId: item.id, minPrice, highestBid: 0, highestBidder: null, host: sender, chatJid: jid, endsAt: Date.now() + AUCTION.DURATION_MS };
-      endTimer = setTimeout(() => endAuction(sock), AUCTION.DURATION_MS);
+      const durationMs = customDurationMs || AUCTION.DURATION_MS;
+      active = { itemId: item.id, minPrice, highestBid: 0, highestBidder: null, host: sender, chatJid: jid, endsAt: Date.now() + durationMs };
+      endTimer = setTimeout(() => endAuction(sock), durationMs);
 
       await sendText(sock, jid,
         `🔨 *AUCTION LIVE!* 💎\n━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `🏆 Item: *${Player.displayName(item)}* (${item.rarity})\n` +
         `💲 Starting price: *${minPrice}* Metaworks\n` +
         `🎯 Any registered manager can *!bid*! (auction hosted by Owner/Officer)\n` +
-        `⏳ Closes in ${AUCTION.DURATION_MS / 1000}s or *!auction end*.\n━━━━━━━━━━━━━━━━━━━━━━━\n${BRAND}`, msg);
+        `⏳ Closes in ${durationMs / 1000}s or *!auction end*.\n━━━━━━━━━━━━━━━━━━━━━━━\n${BRAND}`, msg);
       return;
     }
 
@@ -145,7 +162,7 @@ async function handle({ sock, msg, jid, sender, cmd, args }) {
       return;
     }
 
-    await sendText(sock, jid, `⚠️ Usage:\n*!auction start [playerId|auto] [minPrice]*\n*!auction end*`, msg);
+    await sendText(sock, jid, `⚠️ Usage:\n*!auction start [playerId|auto] [minPrice]*\n*!auction end*\n*!auction time [10-600 seconds]*`, msg);
     return;
   }
 

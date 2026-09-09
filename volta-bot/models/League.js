@@ -125,8 +125,9 @@ function initializeExistingPlayers() {
     }
 
     if (!alreadyInDivision) {
-      // Hudson goes to Division 4, everyone else to Division 3
-      const division = user.name === 'Hudson' ? 4 : 3;
+      // Everyone starts in Division 3 (Junior). There used to be a hardcoded
+      // exception putting a specific manager name into Division 4.
+      const division = 3;
       if (!state.standings[division]) state.standings[division] = {};
       state.standings[division][jid] = getPlayerStats();
     }
@@ -172,28 +173,156 @@ function addAiPlayers(count = 250) {
 
     if (!alreadyExists) {
       if (!state.standings[division]) state.standings[division] = {};
+      // Strength is persistent and tied to the division: Division 1 clubs are
+      // genuinely better than Division 4 ones. Without this, AI teams had no
+      // ability at all — they were rows of frozen numbers that could never win
+      // or lose a game, so promotion was decided entirely by luck of the draw.
+      const base = [0, 82, 74, 66, 58][division] || 66;
+      const strength = Math.max(40, Math.min(95, base + Math.floor(Math.random() * 13) - 6));
+
       state.standings[division][aiId] = {
         ...getPlayerStats(),
         isAi: true,
+        strength,
         name: `${names[nameIndex]}${suffix}`,
-        // Random initial stats
-        played: Math.floor(Math.random() * 20),
-        wins: Math.floor(Math.random() * 10),
-        draws: Math.floor(Math.random() * 5),
-        losses: Math.floor(Math.random() * 10),
-        goalsFor: Math.floor(Math.random() * 30),
-        goalsAgainst: Math.floor(Math.random() * 30),
-        points: 0,
+        // Seed a plausible record. These used to be three independent random
+        // numbers, so `played` rarely matched wins + draws + losses and the
+        // table showed impossible rows like "P4 W7 D2 L5".
+        ...(() => {
+          const wins = Math.floor(Math.random() * 8);
+          const draws = Math.floor(Math.random() * 4);
+          const losses = Math.floor(Math.random() * 8);
+          const goalsFor = wins * 2 + draws + Math.floor(Math.random() * 6);
+          const goalsAgainst = losses * 2 + draws + Math.floor(Math.random() * 6);
+          return {
+            played: wins + draws + losses,
+            wins, draws, losses, goalsFor, goalsAgainst,
+            points: wins * 3 + draws,
+          };
+        })(),
       };
-      // Calculate points
       const stats = state.standings[division][aiId];
-      stats.points = stats.wins * 3 + stats.draws;
       aiIds.push({ id: aiId, name: stats.name, division });
     }
   }
 
   updateState({ standings: state.standings });
   return aiIds;
+}
+
+
+// ─── AI FIXTURES ─────────────────────────────────────────────────────────
+//
+// AI clubs used to be decorative: a name, a random seeded record, and nothing
+// else, forever. Their rows never changed, so the table below you was static
+// scenery and promotion was decided purely by whether real players happened to
+// be in your division.
+//
+// They now play each other. Once per cycle every AI club in a division is paired
+// off and a result is simulated from the two teams' strengths, so the table
+// moves under you between your own matches — and a Division 1 AI side is
+// genuinely hard to finish above.
+
+const AI_STRENGTH_DEFAULT = 66;
+
+function aiStrength(stats) {
+  return typeof stats.strength === 'number' ? stats.strength : AI_STRENGTH_DEFAULT;
+}
+
+/**
+ * Simulate one fixture from two strengths. Returns [goalsA, goalsB].
+ *
+ * Two things this deliberately does NOT do:
+ *
+ *   No home advantage. Pairing is a shuffle, so "side A" is arbitrary — a bonus
+ *   for the first-named club is not a home crowd, it is a bug. An earlier draft
+ *   gave A a +3 and equal teams then finished 40% / 26%, which would have quietly
+ *   skewed every table in the game.
+ *
+ *   No steep curve. At a /14 divisor, a 22-point gap left the underdog winning
+ *   0.9% of the time and the division was decided the moment strengths were
+ *   assigned. At /26 the favourite is still clearly favoured and the underdog
+ *   takes about one game in six, which is roughly what a real league looks like.
+ */
+function simulateFixture(strengthA, strengthB) {
+  const edge = (strengthA - strengthB) / 26;
+  const draw = () => (Math.random() + Math.random() + Math.random() - 1.5) * 2.0;
+  const a = Math.max(0, Math.round(1.35 + edge * 0.55 + draw()));
+  const b = Math.max(0, Math.round(1.35 - edge * 0.55 + draw()));
+  return [a, b];
+}
+
+function applyResult(stats, forGoals, againstGoals) {
+  stats.played++;
+  stats.goalsFor += forGoals;
+  stats.goalsAgainst += againstGoals;
+  if (forGoals > againstGoals) { stats.wins++; stats.points += 3; stats.form.push('W'); }
+  else if (forGoals === againstGoals) { stats.draws++; stats.points += 1; stats.form.push('D'); }
+  else { stats.losses++; stats.form.push('L'); }
+  if (stats.form.length > 5) stats.form = stats.form.slice(-5);
+}
+
+/**
+ * Play one round of AI-vs-AI fixtures in every division.
+ * Returns a per-division count of fixtures played.
+ */
+function playAiRound() {
+  const state = getState();
+  const played = {};
+
+  for (let div = 1; div <= TOTAL_DIVISIONS; div++) {
+    const division = state.standings[div] || {};
+    const ais = Object.entries(division).filter(([, st]) => st && st.isAi);
+    if (ais.length < 2) { played[div] = 0; continue; }
+
+    // Shuffle, then pair off. An odd club sits the round out, like a real bye.
+    for (let i = ais.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [ais[i], ais[j]] = [ais[j], ais[i]];
+    }
+
+    let count = 0;
+    for (let i = 0; i + 1 < ais.length; i += 2) {
+      const [, a] = ais[i];
+      const [, b] = ais[i + 1];
+      const [ga, gb] = simulateFixture(aiStrength(a), aiStrength(b));
+      applyResult(a, ga, gb);
+      applyResult(b, gb, ga);
+      count++;
+    }
+    played[div] = count;
+  }
+
+  updateState({ standings: state.standings });
+  return played;
+}
+
+/** Recent form of an entry, newest first, e.g. "W W D L W". */
+function formString(stats) {
+  const f = Array.isArray(stats.form) ? stats.form.slice(-5) : [];
+  if (!f.length) return '—';
+  return f.slice().reverse().join(' ');
+}
+
+/** Points from the last five, used for a form table. */
+function formPoints(stats) {
+  const f = Array.isArray(stats.form) ? stats.form.slice(-5) : [];
+  return f.reduce((n, r) => n + (r === 'W' ? 3 : r === 'D' ? 1 : 0), 0);
+}
+
+/** The division sorted by recent form rather than the season table. */
+function getFormTable(division) {
+  const state = getState();
+  const rows = Object.entries(state.standings[division] || {}).map(([jid, stats]) => ({
+    jid,
+    name: stats.name || null,
+    isAi: !!stats.isAi,
+    form: formString(stats),
+    formPoints: formPoints(stats),
+    played: stats.played || 0,
+  }));
+  rows.sort((a, b) => b.formPoints - a.formPoints || b.played - a.played);
+  return rows;
 }
 
 // ─── REMOVE AI PLAYERS ───────────────────────────────────────────────────
@@ -257,138 +386,271 @@ function recordMatch(whatsappId, { goalsFor, goalsAgainst, isWin, isDraw }) {
   return stats;
 }
 
+// ─── SORTING ─────────────────────────────────────────────────────────────
+// One comparator used everywhere, so the table you SEE is the table that
+// decides promotion. Previously the champion was picked on points alone while
+// the tables sorted on points → GD → GF, which could crown the wrong manager.
+function compareStandings(a, b) {
+  const pa = a.points || 0, pb = b.points || 0;
+  if (pb !== pa) return pb - pa;
+  const gdA = (a.goalsFor || 0) - (a.goalsAgainst || 0);
+  const gdB = (b.goalsFor || 0) - (b.goalsAgainst || 0);
+  if (gdB !== gdA) return gdB - gdA;
+  const gfA = a.goalsFor || 0, gfB = b.goalsFor || 0;
+  if (gfB !== gfA) return gfB - gfA;
+  const wa = a.wins || 0, wb = b.wins || 0;
+  if (wb !== wa) return wb - wa;
+  return 0;
+}
+
 // ─── PROMOTION / RELEGATION ──────────────────────────────────────────────
+//
+// How many go up and down, scaled to the size of the division.
+//
+// The old code always took the top 2 and bottom 2. In a division of 3 that
+// marked index 1 as BOTH promoted and relegated: the promotion loop deleted
+// the player, then the relegation loop spread the now-undefined record into a
+// new object, so the manager ended up sitting in two divisions at once with a
+// stats record of `{ relegatedAt }` and nothing else. Every later goal-
+// difference calculation on that record produced NaN, which silently corrupts
+// the sort order of the whole table.
+function movementCounts(size) {
+  if (size <= 2) return { up: 0, down: 0 };   // too small to be meaningful
+  if (size <= 3) return { up: 1, down: 0 };
+  if (size <= 5) return { up: 1, down: 1 };
+  return { up: 2, down: 2 };
+}
+
 function processPromotionRelegation() {
   const state = getState();
   const results = { promoted: [], relegated: [], stayed: [], champions: [] };
 
+  // PHASE 1 — decide everything from an untouched snapshot.
+  //
+  // The old implementation mutated `state.standings` while looping divisions
+  // 1→4. Players relegated out of Division 1 landed in Division 2 *before*
+  // Division 2 was processed, so they were judged twice in a single run and
+  // could fall two divisions at once. Deciding first, then applying, makes a
+  // manager's movement depend only on the table they actually played in.
+  const snapshot = {};
   for (let div = 1; div <= TOTAL_DIVISIONS; div++) {
-    const division = state.standings[div] || {};
-    const players = Object.entries(division);
+    const entries = Object.entries(state.standings[div] || {})
+      .map(([jid, stats]) => [jid, stats])
+      .sort((a, b) => compareStandings(a[1], b[1]));
+    snapshot[div] = entries;
+  }
 
-    if (players.length === 0) continue;
+  const moves = [];   // { jid, from, to, kind }
+  const movedJids = new Set();
 
-    // Sort by points (desc), then goal difference, then goals for
-    players.sort((a, b) => {
-      const statsA = a[1];
-      const statsB = b[1];
-      if (statsB.points !== statsA.points) return statsB.points - statsA.points;
-      const gdA = statsA.goalsFor - statsA.goalsAgainst;
-      const gdB = statsB.goalsFor - statsB.goalsAgainst;
-      if (gdB !== gdA) return gdB - gdA;
-      return statsB.goalsFor - statsA.goalsFor;
-    });
+  for (let div = 1; div <= TOTAL_DIVISIONS; div++) {
+    const entries = snapshot[div];
+    if (!entries.length) continue;
 
-    // Special case: if only 2 players, both stay
-    if (players.length === 2) {
-      for (const [jid] of players) {
-        results.stayed.push({ jid, division: div });
-      }
-      continue;
+    const { up, down } = movementCounts(entries.length);
+    const canPromote = div > 1;
+    const canRelegate = div < TOTAL_DIVISIONS;
+
+    const promoteCount = canPromote ? Math.min(up, entries.length) : 0;
+    // Never let the promotion and relegation slices overlap.
+    const relegateCount = canRelegate
+      ? Math.min(down, Math.max(0, entries.length - promoteCount))
+      : 0;
+
+    for (let i = 0; i < promoteCount; i++) {
+      const jid = entries[i][0];
+      moves.push({ jid, from: div, to: div - 1, kind: 'promoted' });
+      movedJids.add(jid);
     }
-
-    // Normal case: top 2 promoted (if not Division 1), bottom 2 relegated (if not Division 7)
-    const promoted = [];
-    const relegated = [];
-
-    if (players.length >= 2) {
-      // Top 2 → promoted
-      if (div > 1) { // Can't promote from Division 1
-        for (let i = 0; i < Math.min(2, players.length); i++) {
-          promoted.push(players[i][0]);
-        }
-      }
-
-      // Bottom 2 → relegated
-      if (div < TOTAL_DIVISIONS) { // Can't relegate from Division 7
-        for (let i = players.length - 1; i >= Math.max(0, players.length - 2); i--) {
-          relegated.push(players[i][0]);
-        }
-      }
-    }
-
-    // Apply promotions
-    for (const jid of promoted) {
-      if (div > 1) {
-        const newDiv = div - 1;
-        if (!state.standings[newDiv]) state.standings[newDiv] = {};
-        state.standings[newDiv][jid] = { ...division[jid], promotedAt: new Date().toISOString() };
-        delete division[jid];
-        results.promoted.push({ jid, from: div, to: newDiv });
-      }
-    }
-
-    // Apply relegations
-    for (const jid of relegated) {
-      if (div < TOTAL_DIVISIONS) {
-        const newDiv = div + 1;
-        if (!state.standings[newDiv]) state.standings[newDiv] = {};
-        state.standings[newDiv][jid] = { ...division[jid], relegatedAt: new Date().toISOString() };
-        delete division[jid];
-        results.relegated.push({ jid, from: div, to: newDiv });
-      }
-    }
-
-    // Players who stayed
-    for (const [jid] of players) {
-      if (!promoted.includes(jid) && !relegated.includes(jid)) {
-        results.stayed.push({ jid, division: div });
-      }
+    for (let i = 0; i < relegateCount; i++) {
+      const jid = entries[entries.length - 1 - i][0];
+      if (movedJids.has(jid)) continue;   // belt and braces
+      moves.push({ jid, from: div, to: div + 1, kind: 'relegated' });
+      movedJids.add(jid);
     }
   }
 
-  // Check Division 1 champion (top player in Division 1)
-  const div1 = state.standings[1] || {};
-  const div1Players = Object.entries(div1);
-  if (div1Players.length > 0) {
-    div1Players.sort((a, b) => b[1].points - a[1].points);
-    const champion = div1Players[0];
+  // Champion of Division 1, decided on the same comparator as the table.
+  const div1 = snapshot[1];
+  if (div1.length) {
+    const [jid, stats] = div1[0];
     results.champions.push({
-      jid: champion[0],
+      jid,
+      name: stats.name || null,
       division: 1,
-      points: champion[1].points,
+      points: stats.points || 0,
+      played: stats.played || 0,
       reward: CHAMPION_REWARD,
+      week: state.currentWeek || 0,
+      at: new Date().toISOString(),
     });
   }
 
-  // Update state
-  updateState({
-    standings: state.standings,
-    lastProcessed: new Date().toISOString(),
-  });
+  // PHASE 2 — apply. Build fresh standings so nothing can be left behind in
+  // two places at once.
+  const next = {};
+  for (let div = 1; div <= TOTAL_DIVISIONS; div++) next[div] = {};
 
+  const moveByJid = new Map(moves.map((m) => [m.jid, m]));
+  for (let div = 1; div <= TOTAL_DIVISIONS; div++) {
+    for (const [jid, stats] of snapshot[div]) {
+      const move = moveByJid.get(jid);
+      if (move && move.from === div) {
+        const stamped = {
+          ...stats,
+          [move.kind === 'promoted' ? 'promotedAt' : 'relegatedAt']: new Date().toISOString(),
+        };
+        next[move.to][jid] = stamped;
+        results[move.kind].push({ jid, from: move.from, to: move.to });
+      } else {
+        next[div][jid] = stats;
+        results.stayed.push({ jid, division: div });
+      }
+    }
+  }
+
+  state.standings = next;
+  updateState({ standings: next, lastProcessed: new Date().toISOString() });
   return results;
 }
 
+// ─── CHAMPION REWARD ─────────────────────────────────────────────────────
+// CHAMPION_REWARD existed as a constant and was reported in the results
+// object, but no code anywhere ever paid it — the Division 1 winner was
+// congratulated and given nothing. This actually credits the account.
+function payChampions(champions = []) {
+  const User = require('./User');
+  const paid = [];
+  for (const champ of champions) {
+    if (!champ || !champ.jid) continue;
+    const user = User.getByWhatsappId(champ.jid);
+    if (!user || !user.registered) continue;      // skip AI and ghosts
+    try {
+      User.update(champ.jid, { currency: (user.currency || 0) + (champ.reward || 0) });
+      paid.push({ jid: champ.jid, name: user.name, amount: champ.reward || 0 });
+    } catch (err) {
+      require('../utils/logger').error({ err, jid: champ.jid }, 'Champion payout failed');
+    }
+  }
+  return paid;
+}
+
 // ─── WEEK MANAGEMENT ─────────────────────────────────────────────────────
-function startNewWeek() {
-  const state = getState();
+//
+// A league week now genuinely resets. The old startNewWeek() read state
+// BEFORE running promotion/relegation, cleared `form` on that stale copy, and
+// then called updateState() with a patch that did not include `standings` —
+// so the reset silently did nothing, and had the patch included standings it
+// would have overwritten the promotion results with pre-promotion data.
+//
+// Points also carried over forever, which made the table a lifetime ranking
+// rather than a weekly competition: whoever joined first stayed top.
+function startNewWeek({ resetStats = true } = {}) {
+  const before = getState();
 
-  // Process promotion/relegation from previous week
   const results = processPromotionRelegation();
+  const paid = payChampions(results.champions);
 
-  // Reset standings for new week (keep points but reset form)
-  for (let div = 1; div <= TOTAL_DIVISIONS; div++) {
-    const division = state.standings[div] || {};
-    for (const jid of Object.keys(division)) {
-      // Keep cumulative stats, just reset form
-      division[jid].form = [];
+  // Re-read: processPromotionRelegation has just written new standings.
+  const state = getState();
+  const standings = state.standings || {};
+
+  if (resetStats) {
+    for (let div = 1; div <= TOTAL_DIVISIONS; div++) {
+      for (const jid of Object.keys(standings[div] || {})) {
+        const s = standings[div][jid];
+        standings[div][jid] = {
+          ...s,
+          played: 0, wins: 0, draws: 0, losses: 0,
+          goalsFor: 0, goalsAgainst: 0, points: 0,
+          form: [],
+        };
+      }
     }
   }
 
-  const newState = {
-    currentWeek: (state.currentWeek || 0) + 1,
+  const champions = [...(before.champions || []), ...results.champions].slice(-20);
+  const history = [...(before.history || []), {
+    week: before.currentWeek || 0,
+    endedAt: new Date().toISOString(),
+    promoted: results.promoted.length,
+    relegated: results.relegated.length,
+    champion: results.champions[0] ? results.champions[0].jid : null,
+  }].slice(-50);
+
+  updateState({
+    standings,
+    champions,
+    history,
+    currentWeek: (before.currentWeek || 0) + 1,
     weekStart: new Date().toISOString(),
     weekEnd: getNextWeekEnd(),
-    totalWeeks: (state.totalWeeks || 0) + 1,
-  };
+    totalWeeks: (before.totalWeeks || 0) + 1,
+  });
 
-  updateState(newState);
-  return { results, week: newState.currentWeek };
+  return { results, paid, week: (before.currentWeek || 0) + 1 };
 }
 
 function endCurrentWeek() {
-  return processPromotionRelegation();
+  const results = processPromotionRelegation();
+  const paid = payChampions(results.champions);
+  return { ...results, paid };
+}
+
+/** True when the current league week has run past its end time. */
+function isWeekOver() {
+  const state = getState();
+  if (!state.weekEnd) return false;
+  return Date.now() >= new Date(state.weekEnd).getTime();
+}
+
+// ─── INTEGRITY REPAIR ────────────────────────────────────────────────────
+// Cleans up damage left by the old promotion logic: managers sitting in two
+// divisions at once, records missing their stats, and points that disagree
+// with the win/draw/loss columns.
+function repairIntegrity() {
+  const state = getState();
+  const fixed = { duplicates: 0, rebuiltStats: 0, recalculatedPoints: 0 };
+  const seen = new Map();   // jid -> division it is kept in
+
+  for (let div = 1; div <= TOTAL_DIVISIONS; div++) {
+    const division = state.standings[div] || (state.standings[div] = {});
+    for (const jid of Object.keys(division)) {
+      // Duplicate across divisions: keep the higher division (lower number).
+      if (seen.has(jid)) {
+        delete division[jid];
+        fixed.duplicates++;
+        continue;
+      }
+      seen.set(jid, div);
+
+      const s = division[jid] || {};
+      const numeric = ['played', 'wins', 'draws', 'losses', 'goalsFor', 'goalsAgainst', 'points'];
+      let rebuilt = false;
+      for (const k of numeric) {
+        if (typeof s[k] !== 'number' || !Number.isFinite(s[k]) || s[k] < 0) {
+          s[k] = 0;
+          rebuilt = true;
+        }
+      }
+      if (!Array.isArray(s.form)) { s.form = []; rebuilt = true; }
+      if (s.form.length > 5) s.form = s.form.slice(-5);
+      if (rebuilt) fixed.rebuiltStats++;
+
+      // played must equal W+D+L, and points must follow from W and D.
+      const decided = s.wins + s.draws + s.losses;
+      if (s.played !== decided) s.played = decided;
+      const truePoints = s.wins * 3 + s.draws;
+      if (s.points !== truePoints) {
+        s.points = truePoints;
+        fixed.recalculatedPoints++;
+      }
+      division[jid] = s;
+    }
+  }
+
+  updateState({ standings: state.standings });
+  return fixed;
 }
 
 // ─── QUERIES ─────────────────────────────────────────────────────────────
@@ -408,15 +670,10 @@ function getDivisionStandings(division) {
   const players = Object.entries(divisionData).map(([jid, stats]) => ({
     jid,
     ...stats,
-    goalDifference: stats.goalsFor - stats.goalsAgainst,
+    goalDifference: (stats.goalsFor || 0) - (stats.goalsAgainst || 0),
   }));
 
-  // Sort by points, goal difference, goals for
-  players.sort((a, b) => {
-    if (b.points !== a.points) return b.points - a.points;
-    if (b.goalDifference !== a.goalDifference) return b.goalDifference - a.goalDifference;
-    return b.goalsFor - a.goalsFor;
-  });
+  players.sort(compareStandings);
 
   return players;
 }
@@ -458,6 +715,78 @@ function getLeagueHistory() {
   };
 }
 
+// ─── ADMIN: CLEAR ALL LEAGUE DATA ──────────────────────────────────────────
+function clearAll() {
+  const state = defaultLeagueState();
+  db.update(TABLE, 'league', state);
+  return state;
+}
+
+// ─── ADMIN: PAUSE / RESUME ─────────────────────────────────────────────────
+function setPaused(paused) {
+  return updateState({ paused: !!paused });
+}
+
+function isPaused() {
+  const state = getState();
+  return !!state.paused;
+}
+
+// ─── ADMIN: MANUAL PROMOTE TO DIVISION ─────────────────────────────────────
+function promoteToDivision(whatsappId, targetDiv) {
+  if (targetDiv < 1 || targetDiv > TOTAL_DIVISIONS) return { error: `Division must be 1-${TOTAL_DIVISIONS}.` };
+  const state = getState();
+
+  // Remove from current division
+  let fromDiv = null;
+  for (let div = 1; div <= TOTAL_DIVISIONS; div++) {
+    if (state.standings[div]?.[whatsappId]) {
+      fromDiv = div;
+      delete state.standings[div][whatsappId];
+      break;
+    }
+  }
+
+  if (!fromDiv) return { error: 'Player not in any division.' };
+
+  // Place in target division with fresh stats
+  if (!state.standings[targetDiv]) state.standings[targetDiv] = {};
+  state.standings[targetDiv][whatsappId] = getPlayerStats();
+
+  updateState({ standings: state.standings });
+  return { from: fromDiv, to: targetDiv };
+}
+
+// ─── ADMIN: RESET ALL PLAYERS TO A DIVISION ────────────────────────────────
+function resetAllToDivision(targetDiv) {
+  if (targetDiv < 1 || targetDiv > TOTAL_DIVISIONS) return { error: `Division must be 1-${TOTAL_DIVISIONS}.` };
+  const state = getState();
+  let moved = 0;
+
+  // Collect all players from all divisions
+  const allPlayers = [];
+  for (let div = 1; div <= TOTAL_DIVISIONS; div++) {
+    for (const [jid] of Object.entries(state.standings[div] || {})) {
+      allPlayers.push(jid);
+    }
+  }
+
+  // Clear all divisions
+  for (let div = 1; div <= TOTAL_DIVISIONS; div++) {
+    state.standings[div] = {};
+  }
+
+  // Place everyone in target division
+  if (!state.standings[targetDiv]) state.standings[targetDiv] = {};
+  for (const jid of allPlayers) {
+    state.standings[targetDiv][jid] = getPlayerStats();
+    moved++;
+  }
+
+  updateState({ standings: state.standings });
+  return { moved, division: targetDiv };
+}
+
 module.exports = {
   DIVISIONS,
   TOTAL_DIVISIONS,
@@ -472,9 +801,24 @@ module.exports = {
   processPromotionRelegation,
   startNewWeek,
   endCurrentWeek,
+  isWeekOver,
+  payChampions,
+  repairIntegrity,
+  playAiRound,
+  simulateFixture,
+  getFormTable,
+  formString,
+  formPoints,
+  compareStandings,
+  movementCounts,
   getPlayerDivision,
   getDivisionStandings,
   getAllDivisions,
   getWeekInfo,
   getLeagueHistory,
+  clearAll,
+  setPaused,
+  isPaused,
+  promoteToDivision,
+  resetAllToDivision,
 };

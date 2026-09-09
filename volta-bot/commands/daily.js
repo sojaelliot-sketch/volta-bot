@@ -2,6 +2,7 @@ const User = require('../models/User');
 const { ECONOMY } = require('../config/constants');
 const { money } = require('../utils/formatter');
 const { sendText } = require('../utils/messaging');
+const ui = require('../utils/ui');
 
 async function handle({ sock, msg, jid, sender, cmd, args }) {
   const user = User.getByWhatsappId(sender);
@@ -48,8 +49,8 @@ async function cmdDaily({ sock, msg, jid, sender, user }) {
   reward = Math.min(reward, ECONOMY.MAX_DAILY);
 
   // Update user
+  User.addCurrency(sender, reward);
   User.update(sender, {
-    currency: (user.currency || 0) + reward,
     lastDaily: now.toISOString(),
     dailyStreak: streak,
   });
@@ -57,14 +58,16 @@ async function cmdDaily({ sock, msg, jid, sender, user }) {
   // Streak emoji
   const streakEmoji = streak >= 7 ? '🔥' : streak >= 3 ? '✨' : '⭐';
 
-  await sendText(sock, jid, `🎁 *DAILY REWARD CLAIMED!*
-━━━━━━━━━━━━━━━━━━━━━━━━
-${streakEmoji} Streak: *${streak} day${streak > 1 ? 's' : ''}*
-💰 Reward: *+${money(reward)}*
-💳 Balance: ${money((user.currency || 0) + reward)}
-
-${streak >= 7 ? '🔥 *7-DAY STREAK!* You\'re on fire!' : streak >= 3 ? '✨ Keep it going!' : '💪 Come back tomorrow to build your streak!'}
-━━━━━━━━━━━━━━━━━━━━━━━━`, msg);
+  await sendText(sock, jid, ui.card({
+    icon: '🎁', title: 'Daily claimed',
+    lead: streak > 1 ? `Day ${streak} in a row. Keep it going.` : 'First one. Come back tomorrow and it grows.',
+    rows: [
+      ['Reward',  `+${ui.money(reward)}`],
+      ['Streak',  `${streakEmoji} ${streak} day${streak === 1 ? '' : 's'}`],
+      ['Balance', ui.money(User.getByWhatsappId(sender).currency)],
+    ],
+    next: 'Spend it — !shop, or put it to work with !play',
+  }), msg);
 }
 
 async function cmdStreak({ sock, msg, jid, user }) {

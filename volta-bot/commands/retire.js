@@ -55,13 +55,13 @@ async function handle({ sock, msg, jid, sender, args, user }) {
     // Release all cards except the legacy card
     for (const id of allCards) {
       if (id !== bestCard) {
-        Player.update(id, { owner: null });
+        Player.update(id, { ownerId: null });
       }
     }
 
     // If keeping a card, adjust its stats slightly for the fresh start
     if (bestCard) {
-      Player.update(bestCard, { level: 1, form: 50, condition: 100, injuredUntil: null });
+      Player.update(bestCard, { level: 1, form: 'Normal', condition: 100, injuredUntil: null });
     }
 
     // Reset user to fresh state with legacy bonus

@@ -2,7 +2,10 @@
 // Renders match "kickoff" and "full time" scoreboard images as PNG buffers.
 // Self-contained (only depends on nothing external) so it can be dropped into
 // any project on its own, same as cardRenderer.js.
-const { createCanvas } = require('canvas');
+const safeCanvas = require('./safeCanvas');
+const createCanvas = safeCanvas.createCanvas;
+// Resolved lazily: 'Volta, sans-serif' when assets/fonts/ holds faces, else 'sans-serif'.
+const FONT = () => safeCanvas.fontFamily();
 
 const W = 1000;
 const H = 650;
@@ -198,7 +201,7 @@ function weatherLabel(timeOfDay, weather) {
 
 function drawTopBanner(ctx, text, timeOfDay, weather) {
   ctx.textAlign = 'center';
-  ctx.font = '600 15px sans-serif';
+  ctx.font = `600 15px ${FONT()}`;
   ctx.fillStyle = 'rgba(255,255,255,0.75)';
   ctx.fillText('𝙈𝙀𝙏𝘼𝙒𝙊𝙍𝙆𝙎™ · VOLTA', W / 2, 34);
 
@@ -211,10 +214,10 @@ function drawTopBanner(ctx, text, timeOfDay, weather) {
   ctx.lineWidth = 1;
   ctx.stroke();
   ctx.textAlign = 'left';
-  ctx.font = '16px sans-serif';
+  ctx.font = `16px ${FONT()}`;
   ctx.fillStyle = '#fff';
   ctx.fillText(weatherBadgeIcon(timeOfDay, weather), cx + 12, cy + 23);
-  ctx.font = '600 13px sans-serif';
+  ctx.font = `600 13px ${FONT()}`;
   ctx.fillText(weatherLabel(timeOfDay, weather), cx + 38, cy + 22);
 }
 
@@ -239,7 +242,7 @@ function drawTeamBadge(ctx, cx, cy, r, name) {
   ctx.stroke();
 
   ctx.textAlign = 'center';
-  ctx.font = `800 ${Math.round(r * 0.7)}px sans-serif`;
+  ctx.font = `800 ${Math.round(r * 0.7)}px ${FONT()}`;
   ctx.fillStyle = '#fff';
   ctx.save();
   ctx.shadowColor = 'rgba(0,0,0,0.5)';
@@ -250,7 +253,7 @@ function drawTeamBadge(ctx, cx, cy, r, name) {
 
 function drawFooter(ctx) {
   ctx.textAlign = 'center';
-  ctx.font = '500 13px sans-serif';
+  ctx.font = `500 13px ${FONT()}`;
   ctx.fillStyle = 'rgba(255,255,255,0.6)';
   ctx.fillText('⚽ VOLTA — 5-a-side simulation on WhatsApp', W / 2, H - 18);
 }
@@ -262,7 +265,22 @@ function drawFrame(ctx) {
   ctx.stroke();
 }
 
-function renderKickoffCard({ homeTeam, awayTeam, timeOfDay = 'day', weather = 'sunny', venue = 'VOLTA Arena' }) {
+// Coerce a team name into something printable. A half-populated match session
+// used to put the literal string "undefined" on the card — visible to the whole
+// group, and impossible to trace afterwards.
+function teamName(v, fallback) {
+  const s = (v === null || v === undefined) ? '' : String(v).trim();
+  return s && s !== 'undefined' && s !== 'null' ? s : fallback;
+}
+function scoreNum(v) {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
+}
+
+function renderKickoffCard({ homeTeam, awayTeam, timeOfDay = 'day', weather = 'sunny', venue = 'VOLTA Arena' } = {}) {
+  homeTeam = teamName(homeTeam, 'Home');
+  awayTeam = teamName(awayTeam, 'Away');
+  venue = teamName(venue, 'VOLTA Arena');
   const canvas = createCanvas(W, H);
   const ctx = canvas.getContext('2d');
   const rainy = weather === 'raining';
@@ -284,12 +302,12 @@ function renderKickoffCard({ homeTeam, awayTeam, timeOfDay = 'day', weather = 's
   ctx.save();
   ctx.shadowColor = 'rgba(255,255,255,0.9)';
   ctx.shadowBlur = 24;
-  ctx.font = '800 46px sans-serif';
+  ctx.font = `800 46px ${FONT()}`;
   ctx.fillStyle = '#ffffff';
   ctx.fillText('VS', W / 2, midY + 16);
   ctx.restore();
 
-  ctx.font = '800 26px sans-serif';
+  ctx.font = `800 26px ${FONT()}`;
   ctx.fillStyle = '#fff';
   ctx.save();
   ctx.shadowColor = 'rgba(0,0,0,0.6)';
@@ -311,11 +329,11 @@ function renderKickoffCard({ homeTeam, awayTeam, timeOfDay = 'day', weather = 's
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
-  ctx.font = '800 20px sans-serif';
+  ctx.font = `800 20px ${FONT()}`;
   ctx.fillStyle = '#fff';
   ctx.fillText('⚽ KICK-OFF', W / 2, ribbonY + 30);
 
-  ctx.font = '500 15px sans-serif';
+  ctx.font = `500 15px ${FONT()}`;
   ctx.fillStyle = 'rgba(255,255,255,0.75)';
   ctx.fillText(venue, W / 2, ribbonY + 68);
 
@@ -331,7 +349,14 @@ function renderFullTimeCard({
   homeTeam, awayTeam, homeScore, awayScore,
   homeScorers = [], awayScorers = [], motm = null,
   timeOfDay = 'day', weather = 'sunny',
-}) {
+} = {}) {
+  homeTeam = teamName(homeTeam, 'Home');
+  awayTeam = teamName(awayTeam, 'Away');
+  homeScore = scoreNum(homeScore);
+  awayScore = scoreNum(awayScore);
+  homeScorers = Array.isArray(homeScorers) ? homeScorers.filter(Boolean) : [];
+  awayScorers = Array.isArray(awayScorers) ? awayScorers.filter(Boolean) : [];
+  if (motm && !teamName(motm.name, '')) motm = null;
   const canvas = createCanvas(W, H);
   const ctx = canvas.getContext('2d');
   const rainy = weather === 'raining';
@@ -353,7 +378,7 @@ function renderFullTimeCard({
   ctx.save();
   ctx.shadowColor = 'rgba(255,80,80,0.8)';
   ctx.shadowBlur = 18;
-  ctx.font = '800 24px sans-serif';
+  ctx.font = `800 24px ${FONT()}`;
   ctx.fillStyle = '#ff5a5a';
   ctx.fillText('🔴 FULL TIME', W / 2, fy);
   ctx.restore();
@@ -362,7 +387,7 @@ function renderFullTimeCard({
   drawTeamBadge(ctx, W * 0.20, boardY, 62, homeTeam);
   drawTeamBadge(ctx, W * 0.80, boardY, 62, awayTeam);
 
-  ctx.font = '700 24px sans-serif';
+  ctx.font = `700 24px ${FONT()}`;
   ctx.fillStyle = '#fff';
   ctx.fillText(homeTeam, W * 0.20, boardY + 92);
   ctx.fillText(awayTeam, W * 0.80, boardY + 92);
@@ -370,7 +395,7 @@ function renderFullTimeCard({
   ctx.save();
   ctx.shadowColor = 'rgba(255,255,255,0.7)';
   ctx.shadowBlur = 20;
-  ctx.font = '800 96px sans-serif';
+  ctx.font = `800 96px ${FONT()}`;
   ctx.fillStyle = '#fff';
   const scoreText = `${homeScore}  -  ${awayScore}`;
   ctx.fillText(scoreText, W / 2, boardY + 34);
@@ -387,14 +412,14 @@ function renderFullTimeCard({
   }
 
   const scY = boardY + 150;
-  ctx.font = '700 14px sans-serif';
+  ctx.font = `700 14px ${FONT()}`;
   ctx.fillStyle = 'rgba(255,255,255,0.85)';
   ctx.textAlign = 'left';
   ctx.fillText('⚽ GOALS', 60, scY);
   ctx.textAlign = 'right';
   ctx.fillText('GOALS ⚽', W - 60, scY);
 
-  ctx.font = '500 15px sans-serif';
+  ctx.font = `500 15px ${FONT()}`;
   const lineH = 24;
   ctx.textAlign = 'left';
   if (homeScorers.length) {
@@ -433,7 +458,7 @@ function renderFullTimeCard({
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    ctx.font = '700 17px sans-serif';
+    ctx.font = `700 17px ${FONT()}`;
     ctx.fillStyle = '#fff';
     ctx.fillText(`🌟 MOTM: ${motm.name} (${motm.team})`, W / 2, my + 30);
   }
@@ -446,4 +471,7 @@ function renderFullTimeCard({
   return canvas.toBuffer('image/png');
 }
 
-module.exports = { renderKickoffCard, renderFullTimeCard };
+module.exports = {
+  renderKickoffCard: safeCanvas.guard('renderKickoffCard', renderKickoffCard),
+  renderFullTimeCard: safeCanvas.guard('renderFullTimeCard', renderFullTimeCard),
+};

@@ -7,9 +7,9 @@
 // is a flat ~10% no matter which way you guess.
 const User = require('../models/User');
 const { HIGHLOW } = require('../config/constants');
-const { money } = require('../utils/formatter');
 const { randInt } = require('../utils/random');
 const { sendText } = require('../utils/messaging');
+const ui = require('../utils/ui');
 
 const EMOJI = { higher: '⬆️', lower: '⬇️' };
 
@@ -31,20 +31,23 @@ function resolve(sender, first, dir, stake) {
     outcome = 'lose'; net = -stake; label = `❌ *${dir === 'higher' ? 'LOWER' : 'HIGHER'}!* Unlucky.`;
   }
 
-  User.update(sender, { currency: (User.getByWhatsappId(sender).currency || 0) + net });
+  User.addCurrency(sender, net, { allowNegative: true });
   const balance = User.getByWhatsappId(sender).currency;
+  const cash =
+    outcome === 'win' ? `💰 *+${ui.money(net)}*  ·  ${mult.toFixed(2)}× on ${ui.money(stake)}`
+    : outcome === 'lose' ? `💰 *-${ui.money(-net)}*`
+    : `💰 Stake returned (${ui.money(stake)})`;
 
-  return (
-    `🎲 *HIGH / LOW*\n━━━━━━━━━━━━━━\n` +
-    `🔢 Number: *${first}*\n` +
-    `${EMOJI[dir]} You said: *${dir.toUpperCase()}*\n` +
-    `🔄 Next number: *${next}*\n` +
-    `${label}\n\n` +
-    (outcome === 'win' ? `💰 *+${money(net)}*  (${mult.toFixed(2)}×)\n`
-      : outcome === 'lose' ? `💰 *-${money(-net)}*\n`
-      : `💰 Stake returned (${money(stake)})\n`) +
-    `💳 Balance: *${money(balance)}*`
-  );
+  return ui.card({
+    icon: '🎲', title: 'High / Low',
+    rows: [
+      ['Number shown', first],
+      ['You said', `${EMOJI[dir]} ${dir.toUpperCase()}`],
+      ['Next number', next],
+    ],
+    body: [label, cash, `💳 Balance: *${ui.money(balance)}*`],
+    next: 'Another spin? !highlow starts a fresh round.',
+  });
 }
 
 async function handle({ sock, msg, jid, sender, cmd, args }) {
@@ -78,7 +81,7 @@ async function handle({ sock, msg, jid, sender, cmd, args }) {
     if (!stake || isNaN(stake)) stake = HIGHLOW.MIN_STAKE;
     stake = Math.max(HIGHLOW.MIN_STAKE, Math.min(HIGHLOW.MAX_STAKE, stake));
     if ((user.currency || 0) < stake) {
-      await sendText(sock, jid, `❌ Need *${money(stake)}* to play. You've got *${money(user.currency || 0)}*.`, msg);
+      await sendText(sock, jid, `❌ Need *${ui.money(stake)}* to play. You've got *${ui.money(user.currency || 0)}*.`, msg);
       return;
     }
     const first = randInt(1, 9);
@@ -99,19 +102,22 @@ async function handle({ sock, msg, jid, sender, cmd, args }) {
   if (!stake || isNaN(stake)) stake = HIGHLOW.MIN_STAKE;
   stake = Math.max(HIGHLOW.MIN_STAKE, Math.min(HIGHLOW.MAX_STAKE, stake));
   if ((user.currency || 0) < stake) {
-    await sendText(sock, jid, `❌ Need *${money(stake)}* to play. You've got *${money(user.currency || 0)}*.`, msg);
+    await sendText(sock, jid, `❌ Need *${ui.money(stake)}* to play. You've got *${ui.money(user.currency || 0)}*.`, msg);
     return;
   }
 
   const first = randInt(1, 9);
   pending.set(sender, { first, stake, expires: Date.now() + PENDING_TTL_MS });
 
-  await sendText(sock, jid,
-    `🎲 *HIGH / LOW*\n━━━━━━━━━━━━━━\n` +
-    `🔢 Number shown: *${first}*\n\n` +
-    `Will the NEXT number (1–9) be *HIGHER ⬆️* or *LOWER ⬇️*?\n` +
-    `Reply: *!highlow higher*  or  *!highlow lower*\n` +
-    `💰 Stake: *${money(stake)}*`, msg);
+  await sendText(sock, jid, ui.card({
+    icon: '🎲', title: 'High / Low',
+    rows: [['Number shown', `*${first}*`]],
+    body: [
+      `Will the NEXT number (1–9) be *HIGHER* ⬆️ or *LOWER* ⬇️?`,
+      `Reply  *!highlow higher*  or  *!highlow lower*`,
+      `💰 Stake: *${ui.money(stake)}*`,
+    ],
+  }), msg);
 }
 
 module.exports = { handle };
