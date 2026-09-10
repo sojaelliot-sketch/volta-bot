@@ -5,6 +5,7 @@ const User = require('../models/User');
 const { money } = require('../utils/formatter');
 const { sendText } = require('../utils/messaging');
 const ui = require('../utils/ui');
+const mentions = require('../utils/mentions');
 const { resolveTarget } = require('./router');
 
 async function handle({ sock, msg, jid, sender, args, replyTo, mentioned }) {
@@ -55,7 +56,7 @@ async function handle({ sock, msg, jid, sender, args, replyTo, mentioned }) {
 
   await sendText(sock, jid, ui.card({
     icon: '💸', title: 'Sent',
-    lead: `${ui.money(amount)} to *${them.name}*.`,
+    lead: `${ui.money(amount)} to ${mentions.tag(targetJid, { name: them.name })}.`,
     rows: [['Your balance', ui.money(result.from)]],
     brand: false,
   }), msg, [targetJid]);

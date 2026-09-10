@@ -113,6 +113,9 @@ const handlers = {
   tbet: () => require('./tbet'),
   debug: () => require('./debug'),
   diag: () => require('./diag'),
+  site: () => require('./site'),
+  setpass: () => require('./password'),
+  web: () => require('./site'),
   agent: () => require('./agent'),
   bargain: () => require('./agent'),
   derby: () => require('./derby'),
@@ -302,6 +305,9 @@ async function handle(sock, msg) {
       || msg.message?.videoMessage?.contextInfo
       || {};
     const replyTo = ctxInfo.participant ? User.normalizeJid(ctxInfo.participant) : null;
+    // All mentions, not just the first — commands that act on two people
+    // (trades, comparisons) previously saw only one of them.
+    const mentionedAll = (ctxInfo.mentionedJid || []).map((j) => User.normalizeJid(j)).filter(Boolean);
     const mentioned = ctxInfo.mentionedJid && ctxInfo.mentionedJid[0]
       ? User.normalizeJid(ctxInfo.mentionedJid[0])
       : null;
@@ -460,7 +466,7 @@ async function handle(sock, msg) {
     // Smart typing pause: shows "typing..." for a natural duration based on
     // expected response length, then sends the response.
     await smartTypingPause(sock, jid, 150);
-    await mod.handle({ sock, msg, jid, sender, cmd, args, user, replyTo, mentioned });
+    await mod.handle({ sock, msg, jid, sender, cmd, args, user, replyTo, mentioned, mentionedAll });
 
     // A new manager gets ONE instruction after each step they complete, rather
     // than a wall of 96 commands at registration. Never fails the command.

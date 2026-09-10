@@ -3,7 +3,6 @@ const Player = require('../models/Player');
 const Loan = require('../models/Loan');
 const { sendText } = require('../utils/messaging');
 const { money } = require('../utils/formatter');
-const ui = require('../utils/ui');
 const { BRAND } = require('../config/constants');
 
 // Resolve a loan target (lender/borrower) from whatever the user provided:
@@ -70,31 +69,27 @@ async function loanCommand({ sock, msg, jid, sender, args, user, replyTo, mentio
 
   // ── !loan help — plain-English guide ──
   if (subcmd === 'help') {
-    await sendText(sock, jid, ui.card({
-      icon: '🏦', title: 'Loans — how they work',
-      body: [
-        `There are two kinds.`,
-        '',
-        `*1 · Lend a player*`,
-        `Send one of your players to another manager for a while. They pay you a fee.`,
-        `  *!loan offer <playerID> @them*`,
-        `That's it — fee, rent and length get sensible defaults. Want to set them?`,
-        `  *!loan offer <playerID> @them <fee> <rent> <days>*`,
-        '',
-        `*2 · Lend money*`,
-        `  *!loan money @them <amount>*  — offer them cash`,
-        `  *!borrow <amount>*  — ask the group for cash`,
-        '',
-        `*Responding to any offer*`,
-        `  *!loan accept <loanID>*`,
-        `  *!loan reject <loanID>*`,
-        `  *!loan pay <loanID> <amount>*`,
-        `  *!loan return <loanID>*  — send a borrowed player home`,
-        '',
-        `Paste the loan ID and the bot works out which type it is. Short forms: *ok* = accept, *no* = reject, *repay* = pay.`,
-      ],
-      next: 'Start with *!squad* to pick a player to offer.',
-    }), msg);
+    await sendText(sock, jid,
+      `🏦 *LOANS — HOW THEY WORK*\n━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `There are two kinds.\n\n` +
+      `*1. Lend a player*\n` +
+      `Send one of your players to another manager for a while. They pay you a fee.\n` +
+      `  *!loan offer <playerID> @them*\n` +
+      `That's it — fee, rent and length get sensible defaults.\n` +
+      `Want to set them yourself?\n` +
+      `  *!loan offer <playerID> @them <fee> <rent> <days>*\n\n` +
+      `*2. Lend money*\n` +
+      `  *!loan money @them <amount>*  — offer them cash\n` +
+      `  *!borrow <amount>*            — ask the group for cash\n\n` +
+      `*Responding to any offer*\n` +
+      `  *!loan accept <loanID>*\n` +
+      `  *!loan reject <loanID>*\n` +
+      `  *!loan pay <loanID> <amount>*\n` +
+      `  *!loan return <loanID>*  — send a borrowed player home\n\n` +
+      `You don't need to remember which type it is. Paste the loan ID and\n` +
+      `the bot works it out.\n\n` +
+      `Short forms: *ok* = accept, *no* = reject, *repay* = pay.\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━\n${BRAND}`, msg);
     return;
   }
 
@@ -103,45 +98,47 @@ async function loanCommand({ sock, msg, jid, sender, args, user, replyTo, mentio
     const myLoans = Loan.getActiveLoansByBorrower(sender);
     const lent = Loan.getLoansByLender(sender);
 
-    let output = ``;
+    let output = `📋 *ACTIVE LOANS*\n━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
     if (myLoans.length === 0 && lent.length === 0) {
-      output = ui.card({
-        icon: '📋', title: 'Active loans',
-        body: [
-          `Nothing running right now. Few things you can do:`,
-          '',
-          `🤝 Lend a player —  *!loan offer <playerID> @them*  (IDs from *!squad*)`,
-          `💵 Lend or borrow cash —  *!loan money @them <amount>*  or  *!borrow <amount>*`,
-          `👀 See what's on offer —  *!loan list*`,
-        ],
-        next: 'Confused? !loan help walks you through it.',
-      });
+      output += `You have no loans running.\n\n`;
+      output += `*Two things you can do:*\n\n`;
+      output += `🤝 Lend a player to someone\n`;
+      output += `   *!loan offer <playerID> @them*\n`;
+      output += `   (get IDs from *!squad*)\n\n`;
+      output += `💵 Lend or borrow money\n`;
+      output += `   *!loan money @them <amount>*\n`;
+      output += `   *!borrow <amount>*\n\n`;
+      output += `👀 See what's on offer\n`;
+      output += `   *!loan list*\n\n`;
+      output += `Confused? Send *!loan help*.\n`;
     } else {
       if (myLoans.length > 0) {
-        output += `📥 *Borrowing:*\n\n`;
+        output += `📥 *Borrowing:*\n`;
         for (const l of myLoans) {
           const player = Player.getById(l.playerId);
           const daysLeft = Math.max(0, Math.ceil((new Date(l.endDate) - new Date()) / 86400000));
-          output += `   • *${player?.name || l.playerId}*\n`;
-          output += `       Owed: ${ui.money(l.totalOwed)} · Paid: ${ui.money(l.paidAmount)}\n`;
-          output += `       Days left: *${daysLeft}* · ID: ${l.id}\n\n`;
+          output += `• *${player?.name || l.playerId}*\n`;
+          output += `  Loan ID: ${l.id}\n`;
+          output += `  Owed: ${(l.totalOwed/1000).toFixed(0)}K | Paid: ${(l.paidAmount/1000).toFixed(0)}K\n`;
+          output += `  Days Left: ${daysLeft}\n\n`;
         }
       }
       if (lent.length > 0) {
-        output += `📤 *Lending:*\n\n`;
+        output += `📤 *Lending:*\n`;
         for (const l of lent) {
           const player = Player.getById(l.playerId);
           const borrower = User.getByWhatsappId(l.borrowerId);
           const daysLeft = Math.max(0, Math.ceil((new Date(l.endDate) - new Date()) / 86400000));
-          output += `   • *${player?.name || l.playerId}* → ${borrower?.name || 'Unknown'}\n`;
-          output += `       Owed: ${ui.money(l.totalOwed)} · Paid: ${ui.money(l.paidAmount)}\n`;
-          output += `       Days left: *${daysLeft}* · ID: ${l.id}\n\n`;
+          output += `• *${player?.name || l.playerId}* → ${borrower?.name || 'Unknown'}\n`;
+          output += `  Loan ID: ${l.id}\n`;
+          output += `  Owed: ${(l.totalOwed/1000).toFixed(0)}K | Paid: ${(l.paidAmount/1000).toFixed(0)}K\n`;
+          output += `  Days Left: ${daysLeft}\n\n`;
         }
       }
-      output = `📋 *ACTIVE LOANS*\n${ui.RULE}\n\n` + output + `\n${ui.RULE}\n${BRAND}`;
     }
 
+    output += `━━━━━━━━━━━━━━━━━━━━━━━\n${BRAND}`;
     await sendText(sock, jid, output, msg);
     return;
   }
@@ -150,22 +147,17 @@ async function loanCommand({ sock, msg, jid, sender, args, user, replyTo, mentio
   if (subcmd === 'request') {
     const amount = parseInt(args[1], 10);
     if (!amount || amount <= 0) {
-      await sendText(sock, jid, ui.card({
-        icon: '💵', title: 'Borrow',
-        body: [`Ask the group for a loan:`, `  *!borrow 5000*`, '', `Anyone can answer with *!loan money @you 5000*.`],
-        next: 'You set the terms, they decide.',
-      }), msg);
+      await sendText(sock, jid,
+        `💵 *BORROW*\n\nAsk the group for a loan:\n  *!borrow 5000*\n\n` +
+        `Anyone can answer with *!loan money @you 5000*.\n${BRAND}`, msg);
       return;
     }
-    await sendText(sock, jid, ui.card({
-      icon: '🙏', title: 'Loan wanted',
-      lead: `*${user.name}* is asking to borrow *💲${ui.money(amount)}*.`,
-      body: [
-        `Want to lend it? Send:`,
-        `  *!loan money @${String(sender).split('@')[0]} ${amount}*`,
-      ],
-      next: 'You set the terms and they can accept or refuse.',
-    }), msg);
+    await sendText(sock, jid,
+      `🙏 *LOAN WANTED*\n━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `*${user.name}* is asking to borrow *${money(amount)}*.\n\n` +
+      `Want to lend it? Send:\n` +
+      `  *!loan money @${String(sender).split('@')[0]} ${amount}*\n\n` +
+      `You set the terms and they can accept or refuse.\n${BRAND}`, msg);
     return;
   }
 
@@ -178,18 +170,14 @@ async function loanCommand({ sock, msg, jid, sender, args, user, replyTo, mentio
     const days = parseInt(args[5]) || 7;
 
     if (!playerQuery || !targetUser) {
-      await sendText(sock, jid, ui.card({
-        icon: '🤝', title: 'Lend a player',
-        body: [
-          `Simplest form — just the player and who gets them:`,
-          `  *!loan offer <playerID> @them*`,
-          '',
-          `Fee, rent and length default to something fair based on the player's rating.`,
-          `Set them yourself:`,
-          `  *!loan offer <playerID> @them <fee> <rent> <days>*`,
-        ],
-        next: 'Get player IDs from *!squad* · full guide in *!loan help*.',
-      }), msg);
+      await sendText(sock, jid,
+        `🤝 *LEND A PLAYER*\n\n` +
+        `Simplest form — just the player and who gets them:\n` +
+        `  *!loan offer <playerID> @them*\n\n` +
+        `Fee, rent and length default to something fair based on the\n` +
+        `player's rating. To set them yourself:\n` +
+        `  *!loan offer <playerID> @them <fee> <rent> <days>*\n\n` +
+        `💡 Get player IDs from *!squad*. Send *!loan help* for the full guide.\n${BRAND}`, msg);
       return;
     }
 
@@ -218,18 +206,14 @@ async function loanCommand({ sock, msg, jid, sender, args, user, replyTo, mentio
       durationDays: days,
     });
 
-    await sendText(sock, jid, ui.card({
-      icon: '📤', title: 'Loan offer created',
-      rows: [
-        ['Player', `*${player.name}*`],
-        ['To', target.name],
-        ['Fee', `💲${ui.money(fee)}`],
-        ['Rent', `💲${ui.money(rent)} · /week`],
-        ['Duration', `${days} days`],
-        ['Loan ID', `${loan.id}`],
-      ],
-next: `They can accept with *!loan accept ${loan.id}*`,
-    }), msg);
+    await sendText(sock, jid,
+      `📤 *LOAN OFFER CREATED!*\n━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `Player: *${player.name}*\n` +
+      `To: ${target.name}\n` +
+      `Fee: ${(fee/1000).toFixed(0)}K MW | Rent: ${(rent/1000).toFixed(0)}K/week\n` +
+      `Duration: ${days} days\n` +
+      `Loan ID: ${loan.id}\n\n` +
+      `They can accept with *!loan accept ${loan.id}*\n${BRAND}`, msg);
     return;
   }
 
@@ -268,17 +252,14 @@ next: `They can accept with *!loan accept ${loan.id}*`,
     const lender = User.getByWhatsappId(loan.lenderId);
     User.addCurrency(loan.lenderId, loan.loanFee);
 
-    await sendText(sock, jid, ui.card({
-      icon: '✅', title: 'Loan accepted',
-      rows: [
-        ['Player', `*${player?.name || loan.playerId}*`],
-        ['Fee paid', `💲${ui.money(loan.loanFee)}`],
-        ['Weekly rent', `💲${ui.money(loan.weeklyRent)}`],
-        ['Duration', `${loan.durationDays} days`],
-      ],
-      body: ['⚠️ The player returns automatically when the loan expires.'],
-      next: `Pay rent with *!loan pay ${loan.id} [amount]*`,
-    }), msg);
+    await sendText(sock, jid,
+      `✅ *LOAN ACCEPTED!*\n━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `Player: *${player?.name || loan.playerId}*\n` +
+      `Fee Paid: ${(loan.loanFee/1000).toFixed(0)}K MW\n` +
+      `Duration: ${loan.durationDays} days\n` +
+      `Weekly Rent: ${(loan.weeklyRent/1000).toFixed(0)}K MW\n\n` +
+      `⚠️ Return player automatically when loan expires!\n` +
+      `Use *!loan pay ${loan.id} [amount]* to pay rent\n${BRAND}`, msg);
     return;
   }
 
@@ -314,21 +295,10 @@ next: `They can accept with *!loan accept ${loan.id}*`,
     }
 
     const msg2 = result.completed
-      ? ui.card({
-          icon: '🎉', title: 'Loan completed',
-          lead: `All paid back — the player returns to its owner.`,
-          brand: false,
-        })
-      : ui.card({
-          icon: '✅', title: 'Payment recorded',
-          rows: [
-            ['Paid', `💲${ui.money(amount)}`],
-            ['Remaining', `💲${ui.money(result.remaining)}`],
-          ],
-          brand: false,
-        });
+      ? `🎉 *LOAN COMPLETED!* Player ownership returned to lender.`
+      : `✅ Payment of ${(amount/1000).toFixed(0)}K MW recorded. Remaining: ${(result.remaining/1000).toFixed(0)}K MW`;
 
-    await sendText(sock, jid, `${msg2}`, msg);
+    await sendText(sock, jid, `${msg2}\n━━━━━━━━━━━━━━━━━━━━━━━\n${BRAND}`, msg);
     return;
   }
 
@@ -349,11 +319,9 @@ next: `They can accept with *!loan accept ${loan.id}*`,
     const player = Player.getById(result.playerId);
     Player.update(result.playerId, { ownerId: result.lenderId, previousOwner: null });
 
-    await sendText(sock, jid, ui.card({
-      icon: '🏡', title: 'Player returned',
-      lead: `*${player?.name || result.playerId}* is back with its owner.`,
-      brand: false,
-    }), msg);
+    await sendText(sock, jid,
+      `✅ *PLAYER RETURNED!*\n━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `*${player?.name || result.playerId}* returned to owner.\n${BRAND}`, msg);
     return;
   }
 
@@ -368,20 +336,14 @@ next: `They can accept with *!loan accept ${loan.id}*`,
     const days = parseInt(rest.find((a) => a !== amountTok && a !== target)) || 7;
 
     if (!target || !amount || amount <= 0) {
-      await sendText(sock, jid, ui.card({
-        icon: '💵', title: 'Ask someone for a loan',
-        body: [
-          `  *!borrow 5000 @them*`,
-          '',
-          `That asks *them* to lend *you* 5,000. They approve or refuse.`,
-          `Going the other way — you lending to someone else:`,
-          `  *!lend @them 5000*`,
-          '',
-          `• 10% interest, 7 days by default (add a number to change it)`,
-          `• Minimum 1,000 · maximum 30 days`,
-        ],
-        next: 'Both sides get a fair deal and a clear due date.',
-      }), msg);
+      await sendText(sock, jid,
+        `💵 *ASK SOMEONE FOR A LOAN*\n\n` +
+        `  *!borrow 5000 @them*\n\n` +
+        `That asks *them* to lend *you* 5,000. They approve or refuse.\n\n` +
+        `Going the other way — you lending to someone else:\n` +
+        `  *!lend @them 5000*\n\n` +
+        `• 10% interest, 7 days by default (add a number to change it)\n` +
+        `• Minimum 1,000 · maximum 30 days\n${BRAND}`, msg);
       return;
     }
 
@@ -417,32 +379,26 @@ next: `They can accept with *!loan accept ${loan.id}*`,
     const paybackDate = new Date(loan.dueAt);
     const dateStr = paybackDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 
-    await sendText(sock, jid, ui.card({
-      icon: '💰', title: 'Money loan requested',
-      rows: [
-        ['Lender', `*${lenderUser.name}*`],
-        ['Amount', `💲${ui.money(amount)}`],
-        ['Interest', `💲${ui.money(loan.interest)} · 10%`],
-        ['Total owed', `💲${ui.money(loan.totalOwed)}`],
-        ['Payback', `${dateStr} · ${days} days`],
-        ['Loan ID', `${loan.id}`],
-      ],
-      lead: `Waiting on *${lenderUser.name}* to accept.`,
-      next: `They use *!loan maccept ${loan.id}* or *!loan mreject ${loan.id}*`,
-    }), msg);
+    await sendText(sock, jid,
+      `💰 *MONEY LOAN REQUESTED!*\n━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `Lender: *${lenderUser.name}*\n` +
+      `Amount: ${money(amount)}\n` +
+      `Interest: ${money(loan.interest)} (10%)\n` +
+      `Total Owed: ${money(loan.totalOwed)}\n` +
+      `Payback Date: *${dateStr}* (${days} days)\n\n` +
+      `⏳ Waiting for *${lenderUser.name}* to accept.\n` +
+      `Loan ID: ${loan.id}\n` +
+      `They can use *!loan maccept ${loan.id}* or *!loan mreject ${loan.id}*\n${BRAND}`, msg);
 
     // Notify the lender directly
     try {
-      await sendText(sock, lenderUser.whatsappId, ui.card({
-        icon: '💰', title: 'Money loan request',
-        lead: `*${user.name || sender.split('@')[0]}* wants to borrow *💲${ui.money(amount)}* from you.`,
-        rows: [
-          ['Interest', `💲${ui.money(loan.interest)} · 10%`],
-          ['Total owed', `💲${ui.money(loan.totalOwed)}`],
-          ['Payback', `${dateStr} · ${days} days`],
-        ],
-        next: `Accept: *!loan maccept ${loan.id}* · Reject: *!loan mreject ${loan.id}*`,
-      }), msg);
+      await sendText(sock, lenderUser.whatsappId,
+        `💰 *MONEY LOAN REQUEST*\n━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `*${user.name || sender.split('@')[0]}* wants to borrow ${money(amount)} from you.\n` +
+        `Interest: ${money(loan.interest)} (10%) | Total Owed: ${money(loan.totalOwed)}\n` +
+        `Payback: ${dateStr} (${days} days)\n\n` +
+        `✅ Accept: *!loan maccept ${loan.id}*\n` +
+        `❌ Reject: *!loan mreject ${loan.id}*\n${BRAND}`, msg);
     } catch (e) { /* DM may fail if no chat exists; ignore */ }
 
     return;
@@ -458,16 +414,10 @@ next: `They can accept with *!loan accept ${loan.id}*`,
     const days = parseInt(rest.find((a) => a !== amountTok && a !== target)) || 7;
 
     if (!amount) {
-      await sendText(sock, jid, ui.card({
-        icon: '💵', title: 'Lend money',
-        body: [
-          `  *!lend @them 5000*`,
-          '',
-          `They get 5,000 now and owe you 10% more in 7 days.`,
-          `Different length? *!lend @them 5000 14*`,
-        ],
-        next: 'Nothing leaves your account until they accept.',
-      }), msg);
+      await sendText(sock, jid,
+        `💵 *LEND MONEY*\n\n  *!lend @them 5000*\n\n` +
+        `They get 5,000 now and owe you 10% more in 7 days.\n` +
+        `Add a number for a different length: *!lend @them 5000 14*\n${BRAND}`, msg);
       return;
     }
     if (amount < 1000) { await sendText(sock, jid, `❌ Minimum loan is 1,000.`, msg); return; }
@@ -493,26 +443,21 @@ next: `They can accept with *!loan accept ${loan.id}*`,
       amount, days, status: 'pending', initiatedBy: 'lender',
     });
 
-    await sendText(sock, jid, ui.card({
-      icon: '💵', title: 'Loan offered',
-      rows: [
-        ['To', `*${borrowerUser.name}*`],
-        ['Amount', `💲${ui.money(amount)}`],
-        ['They repay', `💲${ui.money(loan.totalOwed)} in ${days} days`],
-        ['Loan ID', `${loan.id}`],
-      ],
-      next: `They accept with *!loan accept ${loan.id}* — nothing moves until they do.`,
-    }), msg, [borrowerUser.whatsappId]);
+    await sendText(sock, jid,
+      `💵 *LOAN OFFERED*\n━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `To: *${borrowerUser.name}*\n` +
+      `Amount: ${money(amount)}\n` +
+      `They repay: ${money(loan.totalOwed)} in ${days} days\n\n` +
+      `They accept with:\n  *!loan accept ${loan.id}*\n` +
+      `Nothing leaves your account until they do.\n${BRAND}`, msg, [borrowerUser.whatsappId]);
 
     try {
-      await sendText(sock, borrowerUser.whatsappId, ui.card({
-        icon: '💰', title: 'Someone is offering you a loan',
-        lead: `*${user.name}* will lend you *💲${ui.money(amount)}*.`,
-        rows: [
-          ['You repay', `💲${ui.money(loan.totalOwed)} in ${days} days`],
-        ],
-        next: `Take it: *!loan accept ${loan.id}*  ·  Leave it: *!loan reject ${loan.id}*`,
-      }), msg);
+      await sendText(sock, borrowerUser.whatsappId,
+        `💰 *SOMEONE IS OFFERING YOU A LOAN*\n━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `*${user.name}* will lend you ${money(amount)}.\n` +
+        `You'd repay ${money(loan.totalOwed)} within ${days} days.\n\n` +
+        `Take it:    *!loan accept ${loan.id}*\n` +
+        `Leave it:   *!loan reject ${loan.id}*\n${BRAND}`);
     } catch { /* they may not have a DM open */ }
     return;
   }
@@ -548,27 +493,21 @@ next: `They can accept with *!loan accept ${loan.id}*`,
     const paybackDate = new Date(result.loan.dueAt);
     const dateStr = paybackDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 
-    await sendText(sock, jid, ui.card({
-      icon: '✅', title: 'Money loan approved',
-      rows: [
-        ['Lent to', `*${borrower?.name || 'Unknown'}*`],
-        ['Amount', `💲${ui.money(loan.amount)}`],
-        ['Total owed', `💲${ui.money(loan.totalOwed)}`],
-        ['Payback', `${dateStr}`],
-      ],
-      lead: `💳 ${ui.money(loan.amount)} has been sent.`,
-    }), msg);
+    await sendText(sock, jid,
+      `✅ *MONEY LOAN APPROVED!*\n━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `Lent to: *${borrower?.name || 'Unknown'}*\n` +
+      `Amount: ${money(loan.amount)}\n` +
+      `Total Owed by borrower: ${money(loan.totalOwed)}\n` +
+      `Payback: ${dateStr}\n\n` +
+      `💳 ${money(loan.amount)} has been sent.\n${BRAND}`, msg);
 
     try {
-      await sendText(sock, loan.borrowerId, ui.card({
-        icon: '💰', title: 'Money loan approved',
-        lead: `*${user.name || sender.split('@')[0]}* accepted your loan request!`,
-        rows: [
-          ['You received', `💲${ui.money(loan.amount)}`],
-          ['Total owed', `💲${ui.money(loan.totalOwed)} by ${dateStr}`],
-        ],
-        next: `Repay with *!loan mpay ${loan.id} [amount]*`,
-      }), msg);
+      await sendText(sock, loan.borrowerId,
+        `💰 *MONEY LOAN APPROVED!*\n━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `*${user.name || sender.split('@')[0]}* accepted your loan request!\n` +
+        `You received ${money(loan.amount)}.\n` +
+        `Total owed: ${money(loan.totalOwed)} by ${dateStr}\n\n` +
+        `Repay with *!loan mpay ${loan.id} [amount]*`, msg);
     } catch (e) { /* ignore */ }
 
     return;
@@ -599,18 +538,14 @@ next: `They can accept with *!loan accept ${loan.id}*`,
     }
 
     const borrower = User.getByWhatsappId(loan.borrowerId);
-    await sendText(sock, jid, ui.card({
-      icon: '🚫', title: 'Money loan rejected',
-      lead: `You declined the request from *${borrower?.name || 'Unknown'}*.`,
-      brand: false,
-    }), msg);
+    await sendText(sock, jid,
+      `❌ *MONEY LOAN REJECTED!*\n━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `You declined the request from *${borrower?.name || 'Unknown'}*.\n${BRAND}`, msg);
 
     try {
-      await sendText(sock, loan.borrowerId, ui.card({
-        icon: '💔', title: 'Loan request rejected',
-        lead: `*${user.name || sender.split('@')[0]}* declined your money loan request.`,
-        brand: false,
-      }), msg);
+      await sendText(sock, loan.borrowerId,
+        `💔 *LOAN REQUEST REJECTED*\n━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `*${user.name || sender.split('@')[0]}* rejected your money loan request.\n${BRAND}`, msg);
     } catch (e) { /* ignore */ }
 
     return;
@@ -659,21 +594,10 @@ next: `They can accept with *!loan accept ${loan.id}*`,
     }
 
     const msg2 = result.completed
-      ? ui.card({
-          icon: '🎉', title: 'Fully repaid',
-          lead: `You paid back *💲${ui.money(amount)}* and cleared the debt entirely.`,
-          brand: false,
-        })
-      : ui.card({
-          icon: '✅', title: 'Repayment recorded',
-          rows: [
-            ['Paid', `💲${ui.money(amount)}`],
-            ['Remaining', `💲${ui.money(result.remaining)}`],
-          ],
-          brand: false,
-        });
+      ? `🎉 *MONEY LOAN FULLY REPAID!* You paid back ${money(amount)} and cleared the debt.`
+      : `✅ Repaid ${money(amount)}. Remaining: ${money(result.remaining)}`;
 
-    await sendText(sock, jid, `${msg2}`, msg);
+    await sendText(sock, jid, `${msg2}\n━━━━━━━━━━━━━━━━━━━━━━━\n${BRAND}`, msg);
     return;
   }
 
@@ -683,76 +607,66 @@ next: `They can accept with *!loan accept ${loan.id}*`,
     const lent = Loan.getActiveMoneyLoansByLender(sender);
     const pending = Loan.getPendingMoneyLoansByLender(sender);
 
-    let output = ``;
+    let output = `💰 *MONEY LOANS*\n━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
     if (myLoans.length === 0 && lent.length === 0 && pending.length === 0) {
-      output = ui.card({
-        icon: '💰', title: 'Money loans',
-        body: [
-          `No active money loans.`,
-          '',
-          `• *!loan money [@user] [amount] [days]*`,
-          `• *!loan maccept [id]* / *!loan mreject [id]*`,
-          `• *!loan mpay [loanID] [amount]*`,
-        ],
-        next: '!borrow for the quick version.',
-      });
+      output += `No active money loans.\n\n`;
+      output += `*Commands:*\n`;
+      output += `• *!loan money [@user] [amount] [days]*\n`;
+      output += `• *!loan maccept [id]* / *!loan mreject [id]*\n`;
+      output += `• *!loan mpay [loanID] [amount]*`;
     } else {
       if (myLoans.length > 0) {
-        output += `📥 *You borrowed:*\n\n`;
+        output += `📥 *You Borrowed:*\n`;
         for (const l of myLoans) {
           const lender = User.getByWhatsappId(l.lenderId);
           const daysLeft = Math.max(0, Math.ceil((new Date(l.endDate) - new Date()) / 86400000));
-          output += `   • 💲${ui.money(l.amount)} from *${lender?.name || 'Unknown'}*\n`;
-          output += `       Owed: 💲${ui.money(l.totalOwed)} · Paid: 💲${ui.money(l.paidAmount)}\n`;
-          output += `       Due in: *${daysLeft} days* · ID: ${l.id}\n\n`;
+          output += `• ${money(l.amount)} from *${lender?.name || 'Unknown'}*\n`;
+          output += `  Owed: ${money(l.totalOwed)} | Paid: ${money(l.paidAmount)}\n`;
+          output += `  Due in: ${daysLeft} days | ID: ${l.id}\n\n`;
         }
       }
       if (lent.length > 0) {
-        output += `📤 *You lent (active):*\n\n`;
+        output += `📤 *You Lent (active):*\n`;
         for (const l of lent) {
           const borrower = User.getByWhatsappId(l.borrowerId);
           const daysLeft = Math.max(0, Math.ceil((new Date(l.endDate) - new Date()) / 86400000));
-          output += `   • 💲${ui.money(l.amount)} to *${borrower?.name || 'Unknown'}*\n`;
-          output += `       Owed: 💲${ui.money(l.totalOwed)} · Paid: 💲${ui.money(l.paidAmount)}\n`;
-          output += `       Due in: *${daysLeft} days* · ID: ${l.id}\n\n`;
+          output += `• ${money(l.amount)} to *${borrower?.name || 'Unknown'}*\n`;
+          output += `  Owed: ${money(l.totalOwed)} | Paid: ${money(l.paidAmount)}\n`;
+          output += `  Due in: ${daysLeft} days | ID: ${l.id}\n\n`;
         }
       }
       if (pending.length > 0) {
-        output += `⏳ *Pending requests (you decide):*\n\n`;
+        output += `⏳ *Pending Requests (you decide):*\n`;
         for (const l of pending) {
           const borrower = User.getByWhatsappId(l.borrowerId);
           const dateStr = new Date(l.dueAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-          output += `   • 💲${ui.money(l.amount)} from *${borrower?.name || 'Unknown'}*\n`;
-          output += `       Owed: 💲${ui.money(l.totalOwed)} · Payback: ${dateStr}\n`;
-          output += `       Accept: *!loan maccept ${l.id}* · Reject: *!loan mreject ${l.id}*\n\n`;
+          output += `• ${money(l.amount)} from *${borrower?.name || 'Unknown'}*\n`;
+          output += `  Owed: ${money(l.totalOwed)} | Payback: ${dateStr}\n`;
+          output += `  Accept: *!loan maccept ${l.id}* | Reject: *!loan mreject ${l.id}*\n\n`;
         }
       }
-      output = `💰 *MONEY LOANS*\n${ui.RULE}\n\n` + output + `\n${ui.RULE}\n${BRAND}`;
     }
 
+    output += `━━━━━━━━━━━━━━━━━━━━━━━\n${BRAND}`;
     await sendText(sock, jid, output, msg);
     return;
   }
 
   // Default help
-  await sendText(sock, jid, ui.card({
-    icon: '📋', title: 'Loan commands',
-    body: [
-      `*!loan* — view active loans`,
-      `*!loan offer [player] [@user] [fee] [rent] [days]*`,
-      `*!loan accept [loanID]*`,
-      `*!loan pay [loanID] [amount]*`,
-      `*!loan return [loanID]*`,
-      '',
-      `💰 *Money loans:*`,
-      `*!loan money [@user] [amount] [days]* — request a loan`,
-      `*!loan maccept [id]* / *!loan mreject [id]* — lender decides`,
-      `*!loan mpay [loanID] [amount]* — repay`,
-      `*!loan list* — view money loans`,
-    ],
-    next: '⚠️ Unpaid by the due date and the borrower goes NEGATIVE.',
-  }), msg);
+  await sendText(sock, jid,
+    `📋 *LOAN COMMANDS*\n━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `*!loan* — View active loans\n` +
+    `*!loan offer [player] [@user] [fee] [rent] [days]*\n` +
+    `*!loan accept [loanID]*\n` +
+    `*!loan pay [loanID] [amount]*\n` +
+    `*!loan return [loanID]*\n\n` +
+    `💰 *Money Loans:*\n` +
+    `*!loan money [@user] [amount] [days]* — request a loan\n` +
+    `*!loan maccept [id]* / *!loan mreject [id]* — lender decides\n` +
+    `*!loan mpay [loanID] [amount]* — repay\n` +
+    `*!loan list* — View money loans\n\n` +
+    `⚠️ If not paid by end date, borrower goes NEGATIVE!\n${BRAND}`, msg);
 }
 
 module.exports = { handle: loanCommand };

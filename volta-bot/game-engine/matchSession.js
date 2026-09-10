@@ -554,6 +554,35 @@ async function startMatch(sock, homeId, awayId = 'AI', options = {}) {
 }
 
 async function runPvP(session) {
+  // Everything below runs across several awaits with a live sub window in the
+  // middle. Anything that throws in there — a send failing, a corrupt squad
+  // record, a dropped socket — used to escape with BOTH managers still flagged
+  // inMatch and the chat still locked. Nobody could play, nobody could talk,
+  // and it stayed that way until the one-minute healer noticed.
+  try {
+    return await runPvPInner(session);
+  } catch (err) {
+    logger.error({ err, matchId: session.matchId }, 'PvP match crashed');
+    try {
+      await sendText(session.sock, session.chatJid,
+        '⚠️ *The match broke down.*\n\n' +
+        'Something went wrong mid-game, so it has been abandoned — no result, ' +
+        'nothing deducted from either side.\n\nBoth managers are free. Run it back with *!play*.');
+    } catch { /* the chat may be gone too */ }
+    return null;
+  } finally {
+    // Always release, whatever happened.
+    for (const id of [session.homeId, session.awayId]) {
+      if (!id) continue;
+      try { User.update(id, { inMatch: false, currentMatchId: null }); } catch {}
+    }
+    try { lockedChats.delete(session.chatJid); } catch {}
+    try { activeSessions.delete(session.matchId); } catch {}
+    try { comm.endMatch(session.matchId); } catch {}
+  }
+}
+
+async function runPvPInner(session) {
   const { sock, chatJid, homeName, awayName } = session;
   const segments = MATCH.PVP_SEGMENTS;
   const totalLines = [`🏟️ *Kick-off!* ${homeName} vs ${awayName} — tension THROUGH THE ROOF. Let's ball. 🔥`];
@@ -1126,11 +1155,52 @@ async function finishPvP(s) {
 
   const resultTxt = homeWon ? `🏆 ${s.homeName} wins!` : (winnerId === s.awayId ? `🏆 ${s.awayName} wins!` : `🤝 Draw!`);
 
-  let report = `━━━━━━━━━━━━━━━━━━━━━━━\n🏟️ *FULL TIME — VOLTA*\n━━━━━━━━━━━━━━━━━━━━━━━\n`;
-  report += `🏠 *${s.homeName}*  ${s.homeScore} – ${s.awayScore}  *${s.awayName}* 🚗\n━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-  report += timeline
-    ? `📋 *MATCH LOG*\n${timeline}\n`
-    : `📋 *MATCH LOG*\nNo goals — a cagey ${s.homeScore}–${s.awayScore} draw.\n`;
+  // ── FULL-TIME SCOREBOARD ──
+  //
+  // The old header put both clubs and the score on one line, so a long club
+  // name pushed the score off the edge on a phone and the most important thing
+  // in the message became the hardest thing to read. The score now gets its own
+  // line, centred, with the clubs stacked either side — the shape of an actual
+  // scoreboard, and it survives any name length.
+  const goalsBy = (team) => (s.goalScorers || []).filter((g) => g.team === team);
+  const scorerLine = (team) => {
+    const gs = goalsBy(team);
+    if (!gs.length) return '';
+    // Group repeat scorers: "Okafor 12', 44', 88'" rather than three lines.
+    const byPlayer = new Map();
+    for (const g of gs.sort((a, b) => (a.minute || 0) - (b.minute || 0))) {
+      if (!byPlayer.has(g.player)) byPlayer.set(g.player, []);
+      byPlayer.get(g.player).push(`${g.minute}'`);
+    }
+    return [...byPlayer.entries()]
+      .map(([name, mins]) => `${name} ${mins.join(', ')}`)
+      .join('  ·  ');
+  };
+
+  const margin = Math.abs(s.homeScore - s.awayScore);
+  const verdict =
+    s.homeScore === s.awayScore ? 'Honours even.'
+    : margin >= 4 ? 'A demolition.'
+    : margin === 1 ? 'Settled by one goal.'
+    : 'Comfortable in the end.';
+
+  let report = `🏟️ *FULL TIME*\n━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  report += `*${s.homeName}*\n`;
+  report += `      *${s.homeScore} – ${s.awayScore}*\n`;
+  report += `*${s.awayName}*\n`;
+  report += `_${verdict}_\n━━━━━━━━━━━━━━━━━━━━━━━\n`;
+
+  const homeScorers = scorerLine('home');
+  const awayScorers = scorerLine('away');
+  if (homeScorers || awayScorers) {
+    report += `\n⚽ *SCORERS*\n`;
+    if (homeScorers) report += `${s.homeName}\n  ${homeScorers}\n`;
+    if (awayScorers) report += `${s.awayName}\n  ${awayScorers}\n`;
+  } else {
+    report += `\n_No goals. Nobody could find a way through._\n`;
+  }
+
+  if (timeline) report += `\n📋 *TIMELINE*\n${timeline}\n`;
 
   // ── COMEBACK DETECTION ──
   let comebackTeam = null;

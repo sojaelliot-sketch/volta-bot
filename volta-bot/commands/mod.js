@@ -83,13 +83,13 @@ async function handle({ sock, msg, jid, sender, cmd, args, replyTo, mentioned })
 
     if (cmd === 'ban') {
       User.update(targetJid, { bannedUntil: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365 * 100).toISOString() });
-      await sendText(sock, jid, `⛔ *${target.name}* has been **BANNED** by staff.`, msg);
+      await sendText(sock, jid, `⛔ *${target.name}* has been *banned* by staff.`, msg);
       return;
     }
 
     if (cmd === 'unban') {
       User.update(targetJid, { bannedUntil: null, warnings: 0 });
-      await sendText(sock, jid, `✅ *${target.name}* has been **UNBANNED**.`, msg);
+      await sendText(sock, jid, `✅ *${target.name}* has been *unbanned*.`, msg);
       return;
     }
 

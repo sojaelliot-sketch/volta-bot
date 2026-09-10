@@ -450,19 +450,45 @@ async function main() {
     try { db.reloadAll(); } catch (err) { logger.error({ err }, 'Periodic reload failed'); }
   }, 60 * 1000).unref();
 
-  setInterval(() => {
+  // Free anyone left flagged as "in a match" by a crash or a restart.
+  //
+  // This used to be a bare setInterval, so its FIRST run was 60 seconds after
+  // startup. If the bot died mid-match, every player in that game spent a full
+  // minute after the restart unable to do anything — every command answering
+  // "you're already in a match" for a match that no longer exists. It now runs
+  // immediately on boot as well, and tells the affected players what happened
+  // instead of leaving them to work it out.
+  async function healOrphanMatches(notify) {
     try {
       const { getActiveMatchForUser } = require('./game-engine/matchSession');
-      const users = User.all();
-      for (const u of users) {
+      const freed = [];
+      for (const u of User.all()) {
         if (u.inMatch && !getActiveMatchForUser(u.whatsappId)) {
           User.update(u.whatsappId, { inMatch: false, currentMatchId: null });
+          freed.push(u);
+        }
+      }
+      if (freed.length) {
+        logger.info({ count: freed.length }, 'Released players stuck in dead matches');
+        if (notify && activeSock) {
+          for (const u of freed) {
+            try {
+              await sendText(activeSock, u.whatsappId,
+                '⚠️ *Your match was interrupted.*\n\n' +
+                'The bot restarted before it finished, so that game does not count ' +
+                'and nothing was deducted.\n\nYou are free to play again — send *!play*.');
+            } catch { /* their DM may be closed */ }
+          }
         }
       }
     } catch (err) {
       logger.error({ err }, 'Orphan inMatch heal failed');
     }
-  }, 60 * 1000).unref();
+  }
+
+  // Straight away, then every minute.
+  healOrphanMatches(true);
+  setInterval(() => healOrphanMatches(false), 60 * 1000).unref();
 }
 
 main().catch((err) => {

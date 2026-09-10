@@ -1,83 +1,110 @@
-// commands/password.js
-//   !password <newpassword>          — set / change YOUR web-app password
-//   !password @user <newpassword>    — owner only: reset someone else's password
+'use strict';
+// commands/password.js — !password / !setpass
 //
-// The password is hashed with scrypt + a random salt and stored on the user
-// doc (passwordHash / passwordSalt). It is used to log in to the VOLTA web
-// app (web/server.js) where managers can manage their squad from a browser.
-const crypto = require('crypto');
+//   !password <new>            set or change your own
+//   !password                  guidance, plus a suggestion
+//   !password @user <new>      owner only: reset someone else's
+//
+// The important change: a password typed in a GROUP has already been read by
+// everyone in it. The old command happily accepted that and stored it. It now
+// refuses, tells the player why, and points them at a direct message — because
+// a password everyone saw is not a password.
+
 const User = require('../models/User');
 const { sendText } = require('../utils/messaging');
 const { resolveTarget } = require('./router');
-const { BRAND } = require('../config/constants');
+const ui = require('../utils/ui');
+const pw = require('../utils/password');
 
-const MIN_LEN = 4;
-const SALT_BYTES = 16;
-const KEY_BYTES = 64;
+const SITE_URL = (process.env.SITE_URL || 'https://voltabot1.netlify.app').replace(/\/$/, '');
 
-function hashPassword(password, salt) {
-  return crypto.scryptSync(password, salt, KEY_BYTES).toString('hex');
-}
-function newSalt() {
-  return crypto.randomBytes(SALT_BYTES).toString('hex');
-}
-function verifyPassword(password, hashHex, saltHex) {
-  if (!hashHex || !saltHex) return false;
-  const computed = crypto.scryptSync(password, Buffer.from(saltHex, 'hex'), KEY_BYTES).toString('hex');
-  // length-safe comparison
-  const a = Buffer.from(computed, 'hex');
-  const b = Buffer.from(hashHex, 'hex');
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
-}
+async function handle({ sock, msg, jid, sender, args, replyTo, mentioned, user }) {
+  const isGroup = jid.endsWith('@g.us');
 
-async function handle({ sock, msg, jid, sender, args, replyTo, mentioned }) {
-  // owner resetting someone else's password (reply / mention + password)
+  // Owner resetting somebody else's.
   const target = resolveTarget(args, { replyTo, mentioned });
-  let passwordArg;
+  let passwordArg = args[0];
   let targetJid = sender;
-
   if (target && target !== sender) {
     if (!User.isOwner(sender)) {
-      await sendText(sock, jid, `🚫 Only the *owner* can reset another manager's password.`, msg);
+      await sendText(sock, jid, ui.denied('Only the owner can reset another manager\'s password.'), msg);
       return;
     }
     passwordArg = args[1];
     targetJid = target;
-  } else {
-    passwordArg = args[0];
-    targetJid = sender;
   }
 
-  const pw = (passwordArg || '').trim();
-  if (pw.length < MIN_LEN) {
-    await sendText(sock, jid,
-      `🔐 Set a password for the VOLTA web app.\n\n` +
-      `*!password [password]*  (min ${MIN_LEN} chars)\n\n` +
-      `Then log in at the web app with this password to manage your squad from a browser.`, msg);
+  // ── No password given: explain, and offer one ──
+  if (!passwordArg) {
+    const has = !!(user && user.passwordHash);
+    await sendText(sock, jid, ui.card({
+      icon: '🔑', title: has ? 'Change your password' : 'Set a password',
+      lead: has
+        ? 'You already have one. Send a new one to replace it.'
+        : `A password lets you sign in at ${SITE_URL}.`,
+      body: [
+        '*Send it to me privately:*',
+        '  !password yourNewPassword',
+        '',
+        `At least ${pw.MIN_LEN} characters. Mix letters, numbers and a symbol.`,
+        '',
+        `_Need one? Try:_ *${pw.suggest()}*`,
+        '',
+        '💡 Or skip passwords entirely — send *!site* and tap the link.',
+      ],
+    }), msg);
     return;
   }
 
-  const salt = newSalt();
-  const hash = hashPassword(pw, Buffer.from(salt, 'hex'));
-  User.update(targetJid, { passwordHash: hash, passwordSalt: salt });
+  // ── Refuse to accept a password that a whole group just read ──
+  if (isGroup && targetJid === sender) {
+    await sendText(sock, jid, ui.card({
+      icon: '⚠️', title: 'Everyone here just read that',
+      lead: 'I have not saved it — a password the whole group has seen is not a password.',
+      body: [
+        'Delete that message, then send it to me in a *direct chat* instead.',
+        '',
+        'Easier still: send *!site* here and tap the link. No password needed.',
+      ],
+      brand: false,
+    }), msg);
+    return;
+  }
 
-  const who = targetJid === sender ? 'Your' : `*${targetJid}*'s`;
-  const confirmKey = await sendText(sock, jid,
-    `🔐 ${who} web-app password is set!\n\n` +
-    `🌐 Open the VOLTA web app and log in with this password to manage your team.\n` +
-    `Powered by ${BRAND}`, msg);
+  const verdict = pw.check(passwordArg);
+  if (!verdict.ok) {
+    await sendText(sock, jid, ui.problem(verdict.problem, `_Try something like:_ *${pw.suggest()}*`), msg);
+    return;
+  }
 
-  // Auto-delete the confirmation after 5s so the password hint doesn't linger
-  // in the chat history (the password itself is never printed).
-  setTimeout(() => {
+  const targetUser = User.getByWhatsappId(targetJid);
+  if (!targetUser) {
+    await sendText(sock, jid, ui.problem('That manager is not registered yet.'), msg);
+    return;
+  }
+
+  User.update(targetJid, pw.make(passwordArg));
+
+  if (targetJid !== sender) {
+    await sendText(sock, jid, ui.good('Password reset',
+      [`*${targetUser.name}* can now sign in with the password you set.`]), msg);
     try {
-      if (confirmKey?.key) sock.sendMessage(jid, { delete: confirmKey.key });
-      else if (confirmKey) sock.sendMessage(jid, { delete: confirmKey });
-    } catch {
-      // best-effort cleanup
-    }
-  }, 5000).unref();
+      await sendText(sock, targetJid, ui.card({
+        icon: '🔑', title: 'Your password was reset',
+        lead: 'The owner set a new password on your account.',
+        body: [`Sign in at ${SITE_URL}`, '', 'Change it any time with *!password <new>* in this chat.'],
+      }));
+    } catch { /* their DM may be closed */ }
+    return;
+  }
+
+  const bars = '▰'.repeat(verdict.score + 1) + '▱'.repeat(4 - verdict.score);
+  await sendText(sock, jid, ui.card({
+    icon: '🔐', title: 'Password saved',
+    rows: [['Club', targetUser.name], ['Strength', `${bars}  ${verdict.label}`]],
+    body: ['', `Sign in at ${SITE_URL}`],
+    next: 'Or send !site for a one-tap link that skips the password.',
+  }), msg);
 }
 
-// Exposed so the web server can verify passwords with the exact same algorithm.
-module.exports = { handle, verifyPassword };
+module.exports = { handle };

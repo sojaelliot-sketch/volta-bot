@@ -4,7 +4,6 @@ const transfer = require('../models/transfer');
 const db = require('../config/database');
 const { MARKET, RARITY, ECONOMY } = require('../config/constants');
 const { money, bar } = require('../utils/formatter');
-const ui = require('../utils/ui');
 const { sendText, typing } = require('../utils/messaging');
 const { seedMarketPlayer } = require('../utils/playerGenerator');
 const { v4: uuid } = require('uuid');
@@ -165,12 +164,10 @@ function processExpired(sock) {
       if (moved) {
         User.addCurrency(l.sellerId, payout);
         if (sock) {
-        sendText(sock, l.sellerId, ui.card({
-          icon: '🏦', title: 'Listing expired',
-          lead: `*${Player.displayName(player)}* didn't sell in 10 minutes.`,
-          body: [`The house bought it for *💲${ui.money(payout)}* (market value) and it's now up on the AI Market.`],
-          brand: false,
-        }), undefined)
+        sendText(sock, l.sellerId,
+          `⏰ *LISTING EXPIRED* 🏦\n━━━━━━━━━━━━━━━━━━━━━━━\n` +
+          `*${Player.displayName(player)}* didn't sell in 10 min.\n` +
+          `The house bought it for *${money(payout)}* (market value) and it's now on the AI Market.`, undefined)
            .catch(() => {});
         }
       }
@@ -202,11 +199,7 @@ async function cmdMarket({ sock, msg, jid, args }) {
   }
 
   if (!shownListings.length) {
-    await sendText(sock, jid, ui.card({
-      icon: '📭', title: 'Transfer market',
-      lead: 'No players currently listed.',
-      next: 'The AI is restocking — check back soon!',
-    }), msg);
+    await sendText(sock, jid, `📭 *Transfer Market* — No players currently listed.\n\nAI is restocking... check back soon!`, msg);
     return;
   }
 
@@ -216,7 +209,9 @@ async function cmdMarket({ sock, msg, jid, args }) {
   const start = (page - 1) * pageSize;
   const pageListings = shownListings.slice(start, start + pageSize);
 
-  let text = `*${shownListings.length} players available* · Page ${page}/${totalPages}\n\n`;
+  let text = `🏪 *TRANSFER MARKET* — Page ${page}/${totalPages}
+━━━━━━━━━━━━━━━━━━━━━━━━
+📦 ${shownListings.length} players available\n\n`;
 
   for (const listing of pageListings) {
     const p = Player.getById(listing.playerId);
@@ -226,15 +221,15 @@ async function cmdMarket({ sock, msg, jid, args }) {
     const id = listing.id.slice(0, 6);
     text += `${emoji} *${Player.displayName(p)}* ${role}\n`;
     text += `   ${p.rarity} · Age ${p.age} · Lv.${p.level}\n`;
-    text += `   💲${ui.money(listing.price)}  🆔 \`${id}\`\n\n`;
+    text += `   💰 ${money(listing.price)}  🆔 \`${id}\`\n\n`;
   }
 
-  text += ui.tip(`*!buy [id]* — purchase · *!list [playerID] [price]* — sell · *!market 2* — next page`);
+  text += `━━━━━━━━━━━━━━━━━━━━━━━━
+💡 *!buy [id]* — Purchase a player
+💡 *!list [playerID] [price]* — Sell your player
+📄 *!market 2* — Next page`;
 
-  await sendText(sock, jid, ui.card({
-    icon: '🏪', title: 'Transfer market',
-    body: [text.trimEnd()],
-  }), msg);
+  await sendText(sock, jid, text, msg);
 }
 
 async function cmdBuy({ sock, msg, jid, sender, user, args }) {
@@ -261,14 +256,7 @@ async function cmdBuy({ sock, msg, jid, sender, user, args }) {
   }
 
   if ((user.currency || 0) < listing.price) {
-    await sendText(sock, jid, ui.card({
-      icon: '❌', title: 'Short on Metaworks',
-      rows: [
-        ['Price', `💲${ui.money(listing.price)}`],
-        ['Your balance', `💲${ui.money(user.currency)}`],
-      ],
-      next: 'Play matches or claim *!daily* to top up.',
-    }), msg);
+    await sendText(sock, jid, `❌ Insufficient funds! You need ${money(listing.price)} but only have ${money(user.currency)}.\n\n💰 Play matches or claim *!daily* to earn more.`, msg);
     return;
   }
 
@@ -328,21 +316,18 @@ async function cmdBuy({ sock, msg, jid, sender, user, args }) {
     ? `REF ${s.reflex} POS ${s.positioning} ANT ${s.anticipation} STR ${s.strength} COM ${s.composure}`
     : `PAC ${s.pace} SKL ${s.skill} SHO ${s.shooting} STA ${s.stamina} COM ${s.composure}`;
   await typing(sock, jid, 600);
-  await sendText(sock, jid, ui.card({
-    icon: '✅', title: 'Transfer complete',
-    lead: `${emoji} *${Player.displayName(player)}* signed!`,
-    rows: [
-      ['Profile', `${player.rarity} · ${role} · Age ${player.age}`],
-      ['Attributes', statLine],
-      ['Condition', `❤️ ${bar(player.condition)} · 🆔 \`${player.id.slice(0, 6)}\``],
-    ],
-    body: [
-      `💰 Paid: *${ui.money(listing.price)}*  ·  New balance: *${ui.money((user.currency || 0) - listing.price)}*`,
-      '',
-      `📍 Moved to reserves. Use *!squad* to view your new signing!`,
-    ],
-    next: 'He's hungry — give him a match!',
-  }), msg);
+  await sendText(sock, jid, `✅ *TRANSFER COMPLETE!*
+━━━━━━━━━━━━━━━━━━━━━━━
+${emoji} *${Player.displayName(player)}* signed!
+${player.rarity} · ${role} · Age ${player.age}
+${statLine}
+💰 Paid: ${money(listing.price)}
+💳 New balance: ${money((user.currency || 0) - listing.price)}
+🆔 \`${player.id.slice(0, 6)}\` · ❤️ ${bar(player.condition)}
+
+📍 Player moved to reserves.
+Use *!squad* to view your new signing!
+━━━━━━━━━━━━━━━━━━━━━━━`, msg);
 }
 
 async function cmdSell({ sock, msg, jid, sender, user, args }) {

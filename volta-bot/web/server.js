@@ -67,6 +67,28 @@ const SESSIONS_FILE = path.join(DATA_DIR, '.web_sessions.json');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const PORT = process.env.PORT || 3000;
 
+// Where this backend is reachable from the outside world (an ngrok URL, a
+// tunnel, a VPS hostname). Set PUBLIC_URL in .env and everything else follows.
+const PUBLIC_URL = (process.env.PUBLIC_URL || '').replace(/\/$/, '');
+// Where the frontend is hosted, if it is not served from this process.
+const SITE_URL = (process.env.SITE_URL || 'https://voltabot1.netlify.app').replace(/\/$/, '');
+
+// ── ONE-TAP CONNECT ────────────────────────────────────────────────────────
+//
+// Connecting the site used to mean the player finding the backend's current
+// ngrok URL, opening dev tools, and setting a localStorage key by hand. That is
+// not something a player will ever do, so in practice the site only worked for
+// whoever ran the server.
+//
+// A connect ticket bundles the backend URL and a single-use login token into one
+// link. Tap it, and the site knows where the backend is AND who you are. No
+// address to copy, no password to type.
+// Tickets live in the database, not in this process's memory — the bot mints
+// them and this server redeems them, and they are separate processes.
+const connectTickets = require('../utils/connectTickets');
+const redeemConnectTicket = (code) => connectTickets.redeem(code);
+const buildConnectLink = (jid) => connectTickets.buildLink(jid);
+
 const KEY_BYTES = 64;
 
 db.connectDB();
@@ -74,13 +96,10 @@ db.connectDB();
 // in-memory state (they are separate processes). Cheap for this scale.
 function reload() { db.reloadAll(); }
 
-function verifyPassword(password, hashHex, saltHex) {
-  if (!hashHex || !saltHex) return false;
-  const computed = crypto.scryptSync(password, Buffer.from(saltHex, 'hex'), KEY_BYTES).toString('hex');
-  const a = Buffer.from(computed, 'hex');
-  const b = Buffer.from(hashHex, 'hex');
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
-}
+// Shared with the bot. This was a second copy of the same routine — if either
+// had drifted, a password set on one side would stop working on the other.
+const pw = require('../utils/password');
+const verifyPassword = (password, hashHex, saltHex) => pw.verify(password, hashHex, saltHex);
 
 // Session tokens → whatsappId. Persisted to disk so a backend restart does NOT
 // log managers out (they just keep using their existing token).
@@ -374,6 +393,47 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ── LOGOUT ──
+    // ── CONNECT: trade a one-time ticket for a session ──
+    if (p === '/api/connect' && req.method === 'POST') {
+      const { ticket } = await readBody(req);
+      const whatsappId = redeemConnectTicket(String(ticket || ''));
+      if (!whatsappId) return send(res, 401, { error: 'That link has expired. Send !site in the chat for a new one.' });
+      reload();
+      const u = db.findById('users', whatsappId);
+      if (!u) return send(res, 404, { error: 'Account not found.' });
+      const token = crypto.randomBytes(24).toString('hex');
+      sessions.set(token, whatsappId);
+      saveSessions();
+      return send(res, 200, { token, user: publicUser(u) });
+    }
+
+    // ── SET OR CHANGE PASSWORD FROM THE WEB ──
+    // Previously a password could only ever be set from WhatsApp, so anyone who
+    // arrived through a !site link had no way to create one.
+    if (p === '/api/password' && req.method === 'POST') {
+      const body = await readBody(req);
+      const id = authenticate(body.token);
+      if (!id) return send(res, 401, { error: 'Sign in first.' });
+      reload();
+      const u = db.findById('users', id);
+      if (!u) return send(res, 404, { error: 'Account not found.' });
+
+      // If they already have one, the old password must be given.
+      if (u.passwordHash && !pw.verify(String(body.current || ''), u.passwordHash, u.passwordSalt)) {
+        return send(res, 403, { error: 'That is not your current password.' });
+      }
+      const verdict = pw.check(String(body.password || ''));
+      if (!verdict.ok) return send(res, 400, { error: verdict.problem });
+
+      User.update(id, pw.make(String(body.password)));
+      return send(res, 200, { ok: true, strength: verdict.label });
+    }
+
+    // ── WHERE THINGS LIVE (used by the site to self-configure) ──
+    if (p === '/api/where' && req.method === 'GET') {
+      return send(res, 200, { backend: PUBLIC_URL || null, site: SITE_URL, version: WEB_VERSION });
+    }
+
     if (p === '/api/logout' && req.method === 'POST') {
       const { token } = await readBody(req);
       if (token) { sessions.delete(token); saveSessions(); }

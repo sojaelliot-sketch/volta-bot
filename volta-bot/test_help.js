@@ -32,10 +32,10 @@ for (const c of ['agent','derby','borrow','lend','diag']) {
 
 console.log('\nACCESS IS RESPECTED');
 const plain=help.topLevel('all');
-ok('a normal player is not shown owner tools', !plain.includes('OWNER'));
-ok('the owner is', help.topLevel('owner').includes('OWNER'));
-ok('staff see staff tools', help.topLevel('staff').includes('STAFF'));
-ok('a normal player does not', !plain.includes('STAFF'));
+ok('a normal player is not shown owner tools', !plain.includes('*OWNER*'));
+ok('the owner is', help.topLevel('owner').includes('*OWNER*'));
+ok('staff see staff tools', help.topLevel('staff').includes('*STAFF*'));
+ok('a normal player does not', !plain.includes('*STAFF*'));
 
 console.log('\nDRILL-DOWN WORKS');
 ok('a category renders', (help.category('squad','all')||'').includes('!squad'));
@@ -53,19 +53,15 @@ ok('every command sits in a real category', badCat.length===0, badCat.map(x=>x[0
 const shouty=Object.entries(COMMANDS).filter(([,c])=>c.s===c.s.toUpperCase()&&/[A-Z]{4}/.test(c.s));
 ok('no descriptions are shouting', shouty.length===0);
 
-console.log('\nTHE FULL MENU IS BACK');
+console.log('\nTHE MENU IS ACTUALLY SHORTER');
 const old=fs.existsSync('commands/help.legacy.js.bak')?fs.readFileSync('commands/help.legacy.js.bak','utf8'):'';
 const oldMenu=(old.match(/const MENU = `([\s\S]*?)`;/)||[])[1]||'';
-const ownerCmds=Object.keys(COMMANDS).filter(c=>!COMMANDS[c].hidden);
-const missing=ownerCmds.filter(c=>!menu.includes('!'+c));
-ok('top-level menu lists every owner-visible command', missing.length===0, missing.join(', '));
-const quick=['start','squad','play','daily','league'];
-ok('the quick-start line only names real commands', quick.every(c=>COMMANDS[c]), '');
 if (oldMenu) {
-  const oldCmdSet=new Set((oldMenu.match(/!\w+/g)||[]).map(s=>s.slice(1)));
-  const newSet=new Set(newCmdSet);
-  const gone=[...oldCmdSet].filter(c=>COMMANDS[c]&&!newSet.has(c));
-  ok('the menu is as complete as the old wall — nothing lost', gone.length===0, gone.join(', '));
+  ok('top-level menu is shorter than the old wall', menu.length < oldMenu.length,
+     `${menu.length} vs ${oldMenu.length} chars`);
+  const oldCmds=(oldMenu.match(/!\w+/g)||[]).length;
+  const newCmds=(menu.match(/!\w+/g)||[]).length;
+  ok('and lists far fewer commands up front', newCmds < oldCmds/3, `${newCmds} vs ${oldCmds}`);
 }
 
 console.log('\n'+'='.repeat(48));

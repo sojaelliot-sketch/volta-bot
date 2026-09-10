@@ -1,21 +1,25 @@
 'use strict';
 // utils/ui.js — the house style.
 //
-// One small set of builders so every reply looks like it came from the same
-// place. The rules behind them:
+// Every command wrote its own layout by hand, so the bot looked like ten
+// different products stitched together: some replies opened with a heavy emoji
+// banner, some with none; some used ━ rules, some used ─; some shouted in caps,
+// some didn't; some ended with BRAND, some forgot. The information was fine —
+// it just never looked like it came from the same place.
+//
+// This is one small set of builders. The rules behind them:
 //
 //   • ONE heading per message. If everything is emphasised, nothing is.
 //   • Numbers get room to breathe. A balance is the thing people came for.
 //   • Say what happened before saying what it cost.
 //   • Never end on a dead end — if there is an obvious next command, name it.
-//   • Give replies air: blank lines between sections, space around numbers.
-//   • Emojis carry meaning, not decoration — one icon per block.
+//   • Caps are for scorelines and headings. Not for sentences.
 
 const { BRAND } = require('../config/constants');
 
-const RULE = '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
+const RULE = '━━━━━━━━━━━━━━━━━━━━━━━';
 
-/** Format a currency amount consistently everywhere (plain, no symbol). */
+/** Format a currency amount consistently everywhere. */
 function money(n) {
   return Number(n || 0).toLocaleString('en-US');
 }
@@ -27,34 +31,30 @@ function money(n) {
  *     icon: '💰', title: 'Daily claimed',
  *     lead: 'Day 4 of your streak.',
  *     rows: [['Reward', '+2,400'], ['Balance', '18,900']],
- *     next: 'Come back tomorrow — !daily',
+ *     next: 'Come back tomorrow for more — !daily',
  *   })
  */
 function card({ icon = '', title = '', lead = '', rows = [], body = [], next = '', brand = true }) {
   const out = [];
-  if (title) {
-    out.push(`${icon ? icon + ' ' : ''}*${title}*`);
-    out.push(RULE);
-  }
-
-  if (lead) { out.push(''); out.push(lead); }
+  if (title) out.push(`${icon ? icon + ' ' : ''}*${title}*`);
+  out.push(RULE);
+  if (lead) { out.push(lead); out.push(''); }
 
   if (rows.length) {
-    out.push('');
     const width = Math.max(...rows.map(([k]) => String(k).length));
     for (const [k, v] of rows) {
       if (k === null) { out.push(''); continue; }
-      out.push(`   • ${String(k).padEnd(width)}  ${v}`);
+      out.push(`${String(k).padEnd(width)}  ${v}`);
     }
   }
 
   if (body.length) {
-    out.push('');
+    if (rows.length) out.push('');
     out.push(...body);
   }
 
   if (next) { out.push(''); out.push(`_${next}_`); }
-  if (brand) { out.push(''); out.push(RULE); out.push(BRAND); }
+  if (brand) out.push(BRAND);
   return out.join('\n');
 }
 
@@ -109,31 +109,4 @@ function form(results = []) {
   return f.length ? f.map((r) => icon[r] || '⚪').join('') : '—';
 }
 
-// ── Helpers used by the commands themselves ────────────────────────────────
-
-/** Icon + bold title, no rule — for inline headers inside longer replies. */
-function banner(title, icon = '') {
-  return icon ? `${icon} *${title}*` : `*${title}*`;
-}
-
-/** A gentle hint at the bottom of a reply. */
-function tip(text) {
-  return `💡 ${text}`;
-}
-
-/** A suggested next step, so a reply never dead-ends. */
-function next(text) {
-  return `💡 *Next:* ${text}`;
-}
-
-/** Key-value line, aligned for two-space scannable pairs. */
-function kv(k, v) {
-  return `${String(k)}   ${v}`;
-}
-
-/** Join blocks with an empty line so long replies always have room to breathe. */
-function spaced(...parts) {
-  return parts.filter(Boolean).join('\n\n');
-}
-
-module.exports = { card, banner, tip, next, kv, spaced, figure, good, problem, denied, list, bar, form, money, RULE };
+module.exports = { card, figure, good, problem, denied, list, bar, form, money, RULE };

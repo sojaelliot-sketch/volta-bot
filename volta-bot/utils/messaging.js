@@ -75,11 +75,27 @@ async function sendText(sock, jid, text, quoted = null, mentions = null) {
     await new Promise(r => setTimeout(r, rateDelay));
   }
 
+  // WhatsApp bold is a SINGLE asterisk. Markdown habits leak in — someone
+  // writes **BANNED** expecting bold and WhatsApp shows the asterisks. Collapse
+  // doubles on the way out so it can never reach a chat again.
+  const normalised = String(text == null ? '' : text).replace(/\*\*(?=\S)([\s\S]*?\S)\*\*/g, '*$1*');
+
   // Message content variation (suffixes for repeated msgs)
-  const variedText = varyMessage(text);
+  const variedText = varyMessage(normalised);
 
   const content = { text: variedText };
-  if (mentions && Array.isArray(mentions) && mentions.length) content.mentions = mentions;
+
+  // Derive the mentions array FROM the finished body. A jid in this array only
+  // produces a tag if the body contains its @number, and a body @number only
+  // notifies if the jid is in this array — so computing one from the other is
+  // the only way they cannot drift apart. Callers may still pass jids; they are
+  // honoured only when the body genuinely tags them.
+  try {
+    const resolved = require('./mentions').collect(variedText, mentions || []);
+    if (resolved.length) content.mentions = resolved;
+  } catch {
+    if (mentions && Array.isArray(mentions) && mentions.length) content.mentions = mentions;
+  }
   const opts = quoted ? { quoted } : undefined;
 
   try {

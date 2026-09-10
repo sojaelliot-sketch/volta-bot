@@ -164,6 +164,28 @@ nav.tabs button.on{color:var(--hot)}
 .empty{text-align:center;padding:36px 18px;color:var(--chalk-dim);font-size:14.5px}
 .empty .big{font-size:30px;margin-bottom:8px}
 
+/* player sheet */
+.sheet{position:relative;background:var(--pitch-2);border:1px solid var(--line-2);border-radius:var(--r);padding:16px;margin-bottom:12px}
+.sheet h3{font-family:'Fraunces',serif;font-weight:500;font-size:21px;margin-bottom:2px}
+.sheet .sub{font-size:13px;color:var(--chalk-dim);margin-bottom:14px}
+.statrow{display:grid;grid-template-columns:74px 1fr 34px;gap:9px;align-items:center;margin-bottom:6px;font-size:12.5px}
+.statrow .sk{color:var(--chalk-dim);text-transform:capitalize}
+.statrow .sv{font-family:'IBM Plex Mono',monospace;text-align:right}
+.acts{display:flex;gap:7px;flex-wrap:wrap;margin-top:14px}
+
+/* history */
+.hrow{display:flex;align-items:center;gap:11px;background:var(--pitch-2);border:1px solid var(--line);border-radius:12px;padding:10px 13px;margin-bottom:7px}
+.res{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-weight:700;font-size:13px;flex:0 0 auto}
+.res.W{background:rgba(77,217,166,.16);color:var(--mint)}
+.res.L{background:rgba(228,87,75,.16);color:var(--loss)}
+.res.D{background:rgba(233,240,234,.1);color:var(--chalk-dim)}
+
+/* segmented control */
+.seg{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.seg button{flex:1;min-width:78px;padding:9px;border-radius:10px;border:1px solid var(--line-2);
+  font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--chalk-dim);background:transparent}
+.seg button.on{border-color:var(--hot);color:var(--hot)}
+
 /* ── slot ── */
 .reels{display:flex;gap:9px;justify-content:center;margin:18px 0}
 .reel{width:66px;height:78px;background:var(--pitch-3);border:1px solid var(--line-2);border-radius:13px;
@@ -191,8 +213,19 @@ nav.tabs button.on{color:var(--hot)}
     <input class="field" id="lpass" type="password" placeholder="Password" autocomplete="current-password">
     <button class="btn" id="loginBtn">Sign in</button>
     <p style="margin-top:18px;font-size:13px;color:var(--chalk-dim);text-align:center">
-      No password yet? Send <b>!password yourpassword</b> to the bot.
+      Easiest way in: send <b>!site</b> to the bot and tap the link.<br>
+      Otherwise set a password with <b>!password</b>.
     </p>
+    <div style="margin-top:20px;text-align:center">
+      <button class="btn ghost sm" onclick="document.getElementById('srv').classList.toggle('hidden')">Server address</button>
+    </div>
+    <div id="srv" class="hidden" style="margin-top:12px">
+      <input class="field" id="srvUrl" placeholder="https://your-backend-url">
+      <button class="btn ghost" onclick="saveServer()">Save address</button>
+      <p style="font-size:12px;color:var(--chalk-dim);margin-top:8px">
+        Only needed if the bot's address changed and you have no !site link.
+      </p>
+    </div>
   </div>
 </section>
 
@@ -228,6 +261,39 @@ function base(){
   const here=location.hostname;
   if(here==='localhost'||here==='127.0.0.1') return location.origin;
   return BACKEND.replace(/\/$/,'');
+}
+function setBase(b){ if(b) localStorage.setItem('volta_base', String(b).replace(/\/$/,'')); }
+
+// A !site link looks like  https://…/#c=<base64url({b:backend,t:ticket})>
+// It carries the backend address AND a single-use login ticket, so one tap both
+// points the site at the right server and signs the player in. Before this, the
+// only way to connect was setting a localStorage key by hand in dev tools.
+async function consumeConnectLink(){
+  const m = /[#&]c=([A-Za-z0-9_-]+)/.exec(location.hash || '');
+  if(!m) return false;
+  let payload;
+  try{
+    payload = JSON.parse(atob(m[1].replace(/-/g,'+').replace(/_/g,'/')));
+  }catch{ return false; }
+  // Clear it from the address bar immediately — it is a credential.
+  history.replaceState(null,'',location.pathname+location.search);
+  if(payload.b) setBase(payload.b);
+  if(!payload.t) return false;
+  try{
+    const r = await fetch(base()+'/api/connect',{
+      method:'POST', headers:{'Content-Type':'application/json',...EXTRA},
+      body: JSON.stringify({ticket:payload.t})
+    });
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error||'Link expired');
+    saveToken(d.token); S.user=d.user; enterApp();
+    toast('Connected','win');
+    return true;
+  }catch(e){
+    const msg=document.getElementById('loginMsg');
+    if(msg){ msg.className='msg bad'; msg.textContent=e.message||'That link has expired. Send !site again.'; }
+    return false;
+  }
 }
 function saveToken(t){ t?localStorage.setItem('volta_token',t):localStorage.removeItem('volta_token'); S.token=t; }
 
@@ -375,6 +441,7 @@ function skeletons(n=4){ return `<div class="plist">${'<div class="skel"></div>'
 /* ── CLUB ── */
 async function viewHome(){
   const u=S.user||{};
+  setTimeout(()=>{ const el=document.getElementById('pwNew'); if(el) el.oninput=paintMeter; loadHistory(); },0);
   V.innerHTML=boardHTML()+`
     <div class="grid g3">
       <div class="tile"><div class="k">SQUAD POWER</div><div class="v">${u.squadPower||0}</div></div>
@@ -389,6 +456,24 @@ async function viewHome(){
         <button class="btn mint sm" onclick="claimDaily()">Claim</button>
       </div>
     </div>
+    <div class="sec"><h2>RECENT RESULTS</h2><span class="act" onclick="viewHistory()">All</span></div>
+    <div id="hist">${skeletons(3)}</div>
+
+    <div class="sec"><h2>ACCOUNT</h2></div>
+    <div class="tile">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <div><div style="font-weight:700">Password</div>
+        <div style="font-size:13px;color:var(--chalk-dim);margin-top:2px">Set one so you can sign in without a link.</div></div>
+        <button class="btn ghost sm" onclick="document.getElementById('pwBox').classList.toggle('hidden')">Change</button>
+      </div>
+      <div id="pwBox" class="hidden" style="margin-top:12px">
+        <input class="field" id="pwCur" type="password" placeholder="Current password (leave blank if none)">
+        <input class="field" id="pwNew" type="password" placeholder="New password">
+        <div id="pwMeter" style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:var(--chalk-dim);margin:6px 0"></div>
+        <button class="btn mint" onclick="savePassword()">Save password</button>
+      </div>
+    </div>
+
     <div class="sec"><h2>SHOP</h2></div>
     <div class="grid g3" id="packs">
       ${['STARTER','PRO','ELITE'].map(t=>`
@@ -398,6 +483,67 @@ async function viewHome(){
         </button>`).join('')}
     </div>`;
 }
+// Mirrors utils/password.js so the site tells you the same thing the bot would,
+// before you submit rather than after.
+function strengthOf(p){
+  if(!p) return {label:'',score:-1};
+  if(p.length<6) return {label:`too short — ${p.length}/6`,score:-1};
+  let n=0;
+  if(p.length>=8)n++; if(p.length>=12)n++;
+  if(/[a-z]/.test(p)&&/[A-Z]/.test(p))n++;
+  if(/\d/.test(p))n++; if(/[^A-Za-z0-9]/.test(p))n++;
+  n=Math.min(4,n);
+  return {label:['weak','weak','okay','good','strong'][n],score:n};
+}
+function paintMeter(){
+  const v=document.getElementById('pwNew').value;
+  const s=strengthOf(v);
+  const el=document.getElementById('pwMeter');
+  if(!v){ el.textContent=''; return; }
+  const bars=s.score<0?'▱▱▱▱':'▰'.repeat(s.score+1)+'▱'.repeat(4-s.score);
+  el.textContent=`${bars}  ${s.label}`;
+  el.style.color = s.score<0 ? 'var(--loss)' : s.score>=3 ? 'var(--mint)' : 'var(--chalk-dim)';
+}
+async function savePassword(){
+  await once('pw',async()=>{
+    const current=document.getElementById('pwCur').value;
+    const password=document.getElementById('pwNew').value;
+    if(!password){ toast('Type a new password first','bad'); return; }
+    const d=await api('/api/password',{method:'POST',body:{current,password},retries:0});
+    toast(`Password saved — ${d.strength}`,'win');
+    document.getElementById('pwCur').value='';
+    document.getElementById('pwNew').value='';
+    document.getElementById('pwMeter').textContent='';
+    document.getElementById('pwBox').classList.add('hidden');
+  });
+}
+
+async function loadHistory(target='hist',limit=4){
+  try{
+    const d=await api('/api/mymatches');
+    const el=document.getElementById(target);
+    if(!el) return;
+    const list=(d.matches||[]).slice(0,limit);
+    if(!list.length){ el.innerHTML='<div class="empty">No matches yet. Send !play in the chat.</div>'; return; }
+    const s=d.summary||{};
+    el.innerHTML=(limit>10?`<div class="tile" style="margin-bottom:10px"><div class="k">LAST ${d.matches.length}</div>
+      <div style="font-size:15px;margin-top:4px">${s.wins||0}W · ${s.draws||0}D · ${s.losses||0}L</div></div>`:'')+
+      list.map(m=>`<div class="hrow">
+        <div class="res ${m.outcome}">${m.outcome}</div>
+        <div class="pinfo"><div class="pname">${esc(m.opponent||'Unknown')}</div>
+          <div class="pmeta">${new Date(m.date).toLocaleDateString()}${m.mvp?` · MVP ${esc(m.mvp)}`:''}</div></div>
+        <div class="pright">${m.myScore}–${m.oppScore}</div>
+      </div>`).join('');
+  }catch(e){
+    const el=document.getElementById(target);
+    if(el) el.innerHTML='<div class="empty">Could not load results.</div>';
+  }
+}
+async function viewHistory(){
+  V.innerHTML=boardHTML()+`<div class="sec"><h2>MATCH HISTORY</h2><span class="act" onclick="render()">Back</span></div><div id="histAll">${skeletons(6)}</div>`;
+  loadHistory('histAll',25);
+}
+
 async function claimDaily(){
   await once('daily',async()=>{
     const d=await api('/api/daily',{method:'POST',body:{}});
@@ -428,7 +574,7 @@ async function viewSquad(){
     const all=(d.user.roster||[]).slice().sort((a,b)=>b.total-a.total);
     document.getElementById('sqCount').textContent=all.length+' owned';
     document.getElementById('sq').innerHTML=all.length?`<div class="plist">${
-      all.map(p=>playerRow(p, xi.has(p.id)?'XI':bench.has(p.id)?'BENCH':'RES')).join('')}</div>`
+      all.map(p=>playerRow(p, xi.has(p.id)?'XI':bench.has(p.id)?'BENCH':'RES', true)).join('')}</div>`
       :`<div class="empty"><div class="big">⚽</div>No players yet.<br>Open a pack from the Club tab.</div>`;
   }catch(e){
     document.getElementById('sq').innerHTML=`<div class="empty">Could not load your squad.<br><button class="btn ghost sm" style="margin-top:12px" onclick="render()">Try again</button></div>`;
@@ -441,16 +587,97 @@ function ratingOf(p){
   if(!t) return '—';
   return Math.max(40,Math.min(99,Math.round(40+(t/(99*5))*59)));
 }
-function playerRow(p,slot){
+function playerRow(p,slot,tappable){
   const r=p.rarity||'Common';
   const cond=Number(p.condition);
-  return `<div class="prow">
+  const tag=tappable?`<button class="prow" onclick="openPlayer('${esc(p.id)}')">`:'<div class="prow">';
+  const close=tappable?'</button>':'</div>';
+  return `${tag}
     <div class="ovr ${esc(r)}">${ratingOf(p)}</div>
     <div class="pinfo"><div class="pname">${esc(p.name)}${p.isListed?' <span style="color:var(--gold);font-size:12px">· listed</span>':''}</div>
       <div class="pmeta">${esc(r)} · ${esc(p.role==='goalkeeper'?'GK':'Outfield')}${p.level?' · Lv.'+p.level:''}${
         Number.isFinite(cond)?` · ${cond}% fit`:''}</div></div>
     ${slot?`<div class="pright" style="font-size:11px;color:var(--chalk-dim)">${slot}</div>`:''}
-  </div>`;
+  ${close}`;
+}
+
+// ── PLAYER SHEET ──────────────────────────────────────────────────────────
+// The site could only LOOK at a squad. Everything you might actually want to do
+// with a player — train him, boost him, sell him, move him into the XI — was
+// WhatsApp-only, so the site was a read-only mirror of the real game.
+let sheetFor=null;
+async function openPlayer(id){
+  const d=await api('/api/me'); S.user=d.user;
+  const p=(d.user.roster||[]).find(x=>x.id===id);
+  if(!p){ toast('Player not found','bad'); return; }
+  sheetFor=p;
+  const inXI=(d.user.startingXI||[]).includes(id);
+  const stats=Object.entries(p.stats||{});
+  V.innerHTML=`
+    <button class="backlink btn ghost sm" style="margin-bottom:12px" onclick="viewSquad()">← Squad</button>
+    <div class="sheet">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px">
+        <div class="ovr ${esc(p.rarity||'Common')}" style="width:60px;height:60px;font-size:26px;border-radius:14px">${ratingOf(p)}</div>
+        <div style="flex:1;min-width:0">
+          <h3>${esc(p.name)}</h3>
+          <div class="sub">${esc(p.rarity||'')} · ${p.role==='goalkeeper'?'Goalkeeper':'Outfield'} · Lv.${p.level||1}${inXI?' · in the XI':''}</div>
+        </div>
+      </div>
+      ${stats.map(([k,v])=>`
+        <div class="statrow">
+          <span class="sk">${esc(k)}</span>
+          <span class="bar"><span style="width:${Math.min(100,v)}%;background:var(--hot)"></span></span>
+          <span class="sv">${v}</span>
+        </div>`).join('')}
+      <div class="statrow" style="margin-top:10px">
+        <span class="sk">condition</span>
+        <span class="bar"><span style="width:${Math.min(100,p.condition||100)}%;background:${(p.condition||100)<50?'var(--loss)':'var(--mint)'}"></span></span>
+        <span class="sv">${p.condition||100}</span>
+      </div>
+      <div class="acts">
+        <button class="btn sm primary" onclick="trainPlayer('${esc(id)}',false)">Train</button>
+        <button class="btn sm" onclick="trainPlayer('${esc(id)}',true)">Elite train</button>
+        <button class="btn sm" onclick="boostPlayer('${esc(id)}')">Boost</button>
+        <button class="btn sm" onclick="toggleXI('${esc(id)}')">${inXI?'Drop to bench':'Put in XI'}</button>
+        ${p.isListed?'<button class="btn sm" disabled>Listed</button>'
+          :`<button class="btn sm danger" onclick="listPlayer('${esc(id)}')">Sell</button>`}
+      </div>
+    </div>`;
+}
+async function trainPlayer(id,elite){
+  await once('train'+id,async()=>{
+    const d=await api('/api/shop/train',{method:'POST',body:{playerId:id,elite}});
+    if(d.user) S.user=d.user;
+    toast(elite?'Elite training done':'Training done','win');
+    openPlayer(id);
+  });
+}
+async function boostPlayer(id){
+  await once('boost'+id,async()=>{
+    const d=await api('/api/shop/boost',{method:'POST',body:{playerId:id,type:'stat'}});
+    if(d.user) S.user=d.user;
+    toast('Boosted','win'); openPlayer(id);
+  });
+}
+async function listPlayer(id){
+  const price=prompt('List for how much?');
+  if(!price) return;
+  await once('list'+id,async()=>{
+    const d=await api('/api/market/list',{method:'POST',body:{playerId:id,price:parseInt(price,10)}});
+    if(d.user) S.user=d.user;
+    toast('Listed on the market','win'); viewSquad();
+  });
+}
+async function toggleXI(id){
+  await once('xi'+id,async()=>{
+    const d=await api('/api/me'); const u=d.user;
+    let xi=[...(u.startingXI||[])], bench=[...(u.bench||[])];
+    if(xi.includes(id)){ xi=xi.filter(x=>x!==id); bench.push(id); }
+    else { bench=bench.filter(x=>x!==id); xi.push(id); }
+    const r=await api('/api/squad',{method:'POST',body:{startingXI:xi,bench}});
+    if(r.user) S.user=r.user;
+    toast('Line-up updated','win'); openPlayer(id);
+  });
 }
 
 /* ── MARKET ── */
@@ -494,6 +721,15 @@ function viewPlay(){
       </div>
       <div style="font-size:12.5px;color:var(--chalk-dim)">The house keeps about 8%. Play for fun, not for income.</div>
     </div>
+    <div class="sec"><h2>HIGH OR LOW</h2></div>
+    <div class="tile">
+      <div id="hlBox">
+        <div class="stakerow"><input class="field" id="hlStake" type="number" value="100" min="10" inputmode="numeric"></div>
+        <button class="btn sm" onclick="hlStart()">Deal a number</button>
+      </div>
+      <div style="font-size:12.5px;color:var(--chalk-dim);margin-top:8px">Guess whether the next number beats it.</div>
+    </div>
+
     <div class="sec"><h2>COIN FLIP</h2></div>
     <div class="tile">
       <div class="stakerow"><input class="field" id="cfAmt" type="number" value="100" min="10" inputmode="numeric"></div>
@@ -522,6 +758,30 @@ async function spin(){
     }
   });
 }
+async function hlStart(){
+  await once('hlstart',async()=>{
+    const stake=parseInt(document.getElementById('hlStake').value,10)||100;
+    const d=await api('/api/highlow/start',{method:'POST',body:{stake}});
+    document.getElementById('hlBox').innerHTML=`
+      <div style="text-align:center;margin-bottom:12px">
+        <div style="font-family:'Archivo Narrow',sans-serif;font-size:52px;font-weight:700;line-height:1">${d.first}</div>
+        <div style="font-size:12.5px;color:var(--chalk-dim)">staked ${money(stake)}</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn sm" style="flex:1" onclick="hlGuess('higher')">Higher</button>
+        <button class="btn ghost sm" style="flex:1" onclick="hlGuess('lower')">Lower</button>
+      </div>`;
+  });
+}
+async function hlGuess(dir){
+  await once('hlguess',async()=>{
+    const d=await api('/api/highlow/guess',{method:'POST',body:{dir}});
+    if(d.user) S.user=d.user;
+    toast(`${d.first} → ${d.next} · ${d.net>0?'+':''}${money(d.net)}`, d.net>0?'win':'bad');
+    paintBoard(); viewPlay();
+  });
+}
+
 async function flip(side){
   await once('flip',async()=>{
     const amount=parseInt(document.getElementById('cfAmt').value,10)||100;
@@ -567,6 +827,11 @@ function toggleTheme(){
 }
 
 /* ═══════════════ BOOT ═══════════════ */
+function saveServer(){
+  const v=(document.getElementById('srvUrl').value||'').trim();
+  if(!v){ toast('Enter an address first','bad'); return; }
+  setBase(v); toast('Saved — try signing in','win');
+}
 document.getElementById('loginBtn').onclick=login;
 document.getElementById('lpass').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
 document.documentElement.dataset.theme=localStorage.getItem('volta_theme')||'night';
@@ -574,6 +839,7 @@ window.addEventListener('online',()=>{net(true);refresh();});
 window.addEventListener('offline',()=>net(false,'Offline'));
 
 (async function boot(){
+  if(await consumeConnectLink()) return;
   const t=localStorage.getItem('volta_token');
   if(!t) return;
   S.token=t;

@@ -243,8 +243,23 @@ function addInvisibleChars(text) {
 
   // Collect positions that sit between two plain ASCII characters, so nothing is
   // ever wedged into an emoji, a keycap, a skin-tone modifier or a ZWJ sequence.
+  // Mention tokens are off limits. Inserting an invisible character inside
+  // "@2348012345678" breaks the match WhatsApp uses to render the tag, so the
+  // person silently stops being notified — the exact bug this fixes elsewhere.
+  const blocked = new Array(chars.length).fill(false);
+  const joined = chars.join('');
+  for (const m of joined.matchAll(/@\d{6,20}/g)) {
+    // Map string offsets back onto code-point indices.
+    let cpIndex = 0, strIndex = 0;
+    while (strIndex < m.index && cpIndex < chars.length) { strIndex += chars[cpIndex].length; cpIndex++; }
+    let end = cpIndex, consumed = 0;
+    while (consumed < m[0].length && end < chars.length) { consumed += chars[end].length; end++; }
+    for (let k = cpIndex; k <= end && k < blocked.length; k++) blocked[k] = true;
+  }
+
   const safe = [];
   for (let i = 1; i < chars.length; i++) {
+    if (blocked[i] || blocked[i - 1]) continue;
     if (isSafeBoundary(chars[i - 1]) && isSafeBoundary(chars[i])) safe.push(i);
   }
   if (!safe.length) return text;   // nothing safe to touch — leave it alone
