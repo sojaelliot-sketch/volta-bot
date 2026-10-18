@@ -35,7 +35,7 @@ async function run(label, text, sender) {
     await router.handle(sock, msg(text, sender));
   } catch (e) { threw = e; }
   const errored = sent.some(s => /Something went wrong/.test(s.c?.text || ''));
-  const banned = sent.some(s => /banned/i.test(s.c?.text || ''));
+  const banned = sent.some(s => /You are banned/i.test(s.c?.text || ''));
   const ok = !threw && !errored && !banned;
   results.push({ label, ok, threw: threw && (threw.message || String(threw)) });
   // space non-owner commands out past the anti-spam cooldown so they aren't

@@ -56,7 +56,7 @@ async function run(label, text, sender) {
   let threw = null;
   try { await router.handle(localSock, msg(text, sender)); } catch (e) { threw = e; }
   const errored = mySent.some(s => /Something went wrong/.test(s.c?.text || ''));
-  const banned = mySent.some(s => /banned/i.test(s.c?.text || ''));
+  const banned = mySent.some(s => /You are banned/i.test(s.c?.text || ''));  // not "unbanned" / "banned users: 0"
   const ok = !threw && !errored && !banned;
   results.push({ label, ok, threw: threw && (threw.message || String(threw)).split('\n')[0] });
 }

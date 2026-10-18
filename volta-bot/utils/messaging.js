@@ -45,8 +45,12 @@ function stopTyping(jid) {
   try { entry.sock.sendPresenceUpdate('paused', jid); } catch {}
 }
 
+// Test harnesses set VOLTA_TEST_FAST=1 to skip the human-like send delays.
+// Never set this on the live bot — the delays are anti-ban protection.
+const TEST_FAST = () => process.env.VOLTA_TEST_FAST === '1';
+
 async function smartTypingPause(sock, jid, responseLength) {
-  if (!jid) return;
+  if (!jid || TEST_FAST()) return;
   const delay = calcTypingDelay(responseLength);
   try { sock.sendPresenceUpdate('composing', jid); } catch {}
   await new Promise(r => setTimeout(r, delay));
@@ -55,13 +59,13 @@ async function smartTypingPause(sock, jid, responseLength) {
 
 async function sendText(sock, jid, text, quoted = null, mentions = null) {
   // Health monitor — auto-pause at 90% risk (more lenient)
-  if (shouldPauseSending()) {
+  if (!TEST_FAST() && shouldPauseSending()) {
     logger.warn({ jid }, 'ANTIBAN: Pausing send (90%+ risk)');
     await new Promise(r => setTimeout(r, 15000)); // 15s pause, not 60s
   }
 
   // Burst protection — only for groups, not DMs
-  if (jid && jid.endsWith('@g.us')) {
+  if (!TEST_FAST() && jid && jid.endsWith('@g.us')) {
     const burst = checkBurstProtection(jid);
     if (burst.burst) {
       await new Promise(r => setTimeout(r, burst.restMs));
@@ -71,7 +75,7 @@ async function sendText(sock, jid, text, quoted = null, mentions = null) {
   // Rate limiter (Gaussian + Circadian + Warm-up)
   const msgLen = (text || '').length;
   const rateDelay = getRateLimitDelay(jid, msgLen);
-  if (rateDelay > 0) {
+  if (rateDelay > 0 && !TEST_FAST()) {
     await new Promise(r => setTimeout(r, rateDelay));
   }
 

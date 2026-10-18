@@ -10,6 +10,7 @@ const {
 } = require('@whiskeysockets/baileys');
 const baileys = require('@whiskeysockets/baileys');
 const { resolveVersion } = require('./utils/waVersion');
+const { normaliseNumber, isLinked, sessionState, archiveSession, formatCode } = require('./utils/pairing');
 const { Boom } = require('@hapi/boom');
 const qrcode = require('qrcode-terminal');
 const pino = require('pino');
@@ -73,31 +74,16 @@ let activeSock = null;
 const SESSION_DIR = process.env.SESSION_DIR || './sessions';
 
 /* ------------------------------------------------------------------ *
- * Login mode — matches whatsapp-life-simulator exactly
+ * Login mode — pairing code or QR
  * ------------------------------------------------------------------ */
 
-/** Read `--pair [number]` from the command line. */
+/** Read `--pair [number]` / `--qr` from the command line. */
 function cliPairing(argv = process.argv.slice(2)) {
+  if (argv.includes('--qr')) return { on: false, number: '' };
   const i = argv.findIndex((a) => a === '--pair' || a === '--pairing' || a === '-p');
   if (i === -1) return null;
   const next = argv[i + 1];
   return { on: true, number: next && !next.startsWith('-') ? next : '' };
-}
-
-/**
- * Normalise a phone number for WhatsApp pairing.
- * Accepts any format: +234-801-234-5678, (234) 801 234 5678, 002348012345678, etc.
- * Strips +, spaces, brackets, dashes, leading 00 international prefix.
- * E.164 allows 7-15 digits total (country code + number).
- */
-function normaliseNumber(input) {
-  let digits = String(input || '').replace(/\D/g, '');
-  if (!digits) return null;
-  // Strip leading "00" international prefix (e.g. 00234... -> 234...)
-  if (digits.startsWith('00')) digits = digits.slice(2);
-  // E.164 allows 7-15 digits
-  if (digits.length < 7 || digits.length > 15) return null;
-  return digits;
 }
 
 function ask(question) {
@@ -110,27 +96,29 @@ function ask(question) {
 /** Decide whether to pair, and with which number. Returns null for QR mode. */
 async function resolvePairing() {
   const cli = cliPairing();
-  const wanted = (cli && cli.on) || String(process.env.USE_PAIRING_CODE).toLowerCase() === 'true';
+  const wanted = cli ? cli.on : String(process.env.USE_PAIRING_CODE).toLowerCase() === 'true';
   if (!wanted) return null;
 
   const given = (cli && cli.number) || process.env.PHONE_NUMBER || '';
-  let normalised = normaliseNumber(given);
+  let result = given ? normaliseNumber(given) : { error: 'No number given.' };
+  if (given && result.error) console.log(`[VOLTA] ⚠️  PHONE_NUMBER "${given}": ${result.error}`);
 
-  while (!normalised) {
+  while (result.error) {
     if (!process.stdin.isTTY) {
-      console.log('[VOLTA] ⚠️  Pairing-code login was requested but no valid number was supplied.');
-      console.log('    Set PHONE_NUMBER, or pass it: npm start -- --pair 2348012345678');
+      console.log('[VOLTA] ⚠️  Pairing-code login was requested but no valid number was supplied,');
+      console.log('    and this terminal cannot prompt for one (running under pm2 / a service?).');
+      console.log('    Set PHONE_NUMBER in .env, or run once by hand: npm start -- --pair 2348012345678');
       console.log('    Falling back to QR code.');
       return null;
     }
-    const answer = await ask('\nEnter your WhatsApp number with country code (digits only, no +):\n  US: 14155552671 | UK: 447911123456 | NG: 2348012345678 | IN: 919876543210\n> ');
-    normalised = normaliseNumber(answer);
-    if (!normalised) console.log('   That does not look like a valid number. Try again.');
+    const answer = await ask('\nEnter your WhatsApp number in international format:\n  NG: 2348012345678 (08012345678 also works) | UK: 447911123456 | US: 14155552671\n> ');
+    result = normaliseNumber(answer);
+    if (result.error) console.log('   ' + result.error + ' Try again.');
   }
-  return normalised;
+  if (result.note) console.log(`[VOLTA] Number adjusted (${result.note}).`);
+  return result.number;
 }
 
-let pairingRequested = false;
 let reconnectAttempts = 0;
 let socketId = 0;
 let cachedPairNumber = null;
@@ -138,8 +126,21 @@ let reconnectTimer = null;
 let reconnecting = false;
 let stableSince = 0;
 let fatalStop = false;
+let cachedVersion = null;
+let codesIssued = 0;          // pairing codes requested since the last successful link
+let freshStartsUsed = 0;      // times we wiped a rejected half-linked session
+let stdinHooked = false;
 
 const MAX_RECONNECT_ATTEMPTS = 12;
+// Each code triggers a notification on the phone. If nobody is entering them,
+// stop instead of spamming the account (which also looks bot-like to WhatsApp).
+const MAX_PAIRING_CODES = 5;
+const MAX_FRESH_STARTS = 3;
+// How long one pairing socket stays up waiting for the code to be typed.
+// Baileys closes the socket (408) when the server's QR refs run out; with the
+// default 60s/20s timers that was ~2.5 minutes, so a code typed at minute 3
+// was always rejected and a new, unannounced code had already replaced it.
+const PAIRING_REF_MS = 90 * 1000;
 // A connection must survive this long before we treat it as healthy and clear
 // the backoff. Without it, a socket that opens and dies a second later resets
 // the counter every time and the "exponential" backoff never grows.
@@ -176,45 +177,92 @@ function scheduleReconnect(delayMs, why) {
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     startBot()
-      .catch((e) => console.log('[VOLTA] reconnect failed:', e && e.message))
-      .finally(() => { reconnecting = false; });
+      .then(() => { reconnecting = false; })
+      .catch((e) => {
+        // startBot itself failed (disk, version lookup…). Previously this just
+        // logged and the bot sat dead with no socket and no retry pending.
+        reconnecting = false;
+        reconnectAttempts++;
+        console.log('[VOLTA] reconnect failed:', e && e.message);
+        if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
+          fatalStop = true;
+          console.log('[VOLTA] ❌ Could not restart the connection. Restart the process.');
+          return;
+        }
+        scheduleReconnect(Math.min(5000 * reconnectAttempts, 60000), 'Startup error.');
+      });
   }, delayMs);
 }
 
-/**
- * A pairing attempt must start from a clean auth folder. A half-linked session
- * (files present, creds.registered === false) makes WhatsApp reject the code.
- */
-function sessionIsDirty(dir) {
-  const fs = require('fs');
+/** Move a rejected / half-linked session aside so the next socket starts clean. */
+function resetSession(why) {
+  const where = archiveSession(SESSION_DIR);
+  if (where) console.log(`[VOLTA] ${why} Old session moved to ${where}.`);
+}
+
+/** Ask WhatsApp for a pairing code on this socket and print it. */
+async function issuePairingCode(sock, myId, number) {
+  if (myId !== socketId || fatalStop) return;
+  if (isLinked(sock.authState.creds)) return;
+  if (codesIssued >= MAX_PAIRING_CODES) {
+    fatalStop = true;
+    console.log(`\n[VOLTA] ❌ ${MAX_PAIRING_CODES} pairing codes went unused. Stopping so the phone is not spammed.`);
+    console.log('    Restart when you are ready to type the code:  npm start -- --pair ' + number);
+    teardownSocket(sock);
+    return;
+  }
+  codesIssued++;
   try {
-    if (!fs.existsSync(dir)) return false;
-    const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json'));
-    if (files.length === 0) return false;
-    const credsPath = require('path').join(dir, 'creds.json');
-    if (!fs.existsSync(credsPath)) return files.length > 0;
-    const creds = JSON.parse(fs.readFileSync(credsPath, 'utf8'));
-    return !creds.registered;
-  } catch { return false; }
+    const code = await sock.requestPairingCode(number);
+    if (myId !== socketId) return;   // socket was replaced while we waited
+    console.log('\n' + '='.repeat(52));
+    console.log(`   PAIRING CODE:   ${formatCode(code)}` + (codesIssued > 1 ? `   (new code #${codesIssued})` : ''));
+    console.log(`   For number:     +${number}`);
+    console.log('='.repeat(52));
+    if (codesIssued > 1) console.log('   ⚠️  Any earlier code is now INVALID — use this one.');
+    console.log('   On the phone that owns this number:');
+    console.log('     WhatsApp -> Settings (or ⋮) -> Linked devices');
+    console.log('       -> Link a device');
+    console.log('       -> "Link with phone number instead"');
+    console.log('       -> type the code above');
+    console.log('   Watch for a WhatsApp notification on the phone — tapping it');
+    console.log('   opens the code box directly.');
+    if (process.stdin.isTTY) console.log('   Code expired or rejected? Press ENTER here for a fresh one.');
+    console.log('='.repeat(52) + '\n');
+  } catch (err) {
+    console.log('[VOLTA] Could not obtain a pairing code:', err && err.message);
+    console.log('   The connection will be retried automatically.');
+  }
+}
+
+/** Interactive helper: ENTER in the terminal asks for a fresh code. */
+function hookStdinForNewCode() {
+  if (stdinHooked || !process.stdin.isTTY) return;
+  stdinHooked = true;
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', () => {
+    const sock = activeSock;
+    if (!sock || !cachedPairNumber || fatalStop) return;
+    if (isLinked(sock.authState.creds)) return;
+    console.log('[VOLTA] Requesting a fresh pairing code…');
+    issuePairingCode(sock, socketId, cachedPairNumber);
+  });
+  process.stdin.resume();
 }
 
 async function startBot() {
-  if (sessionIsDirty(SESSION_DIR)) {
-    console.log('[VOLTA] ⚠️  The sessions/ folder holds a half-linked session (registered: false).');
-    console.log('    WhatsApp will reject a pairing code against it. Clear it first:');
-    console.log(`      rm -rf ${SESSION_DIR}      (Windows:  rmdir /s /q sessions)`);
-    console.log('    Then start again.');
-  }
-
   const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
-  const { version, source } = await resolveVersion(baileys, (m) => console.log(`[VOLTA] ${m}`));
+  if (!cachedVersion) {
+    cachedVersion = await resolveVersion(baileys, (m) => console.log(`[VOLTA] ${m}`));
+  }
+  const { version } = cachedVersion;
 
-  const registered = !!state.creds.registered;
-  const pairNumber = registered ? null : (cachedPairNumber || await resolvePairing());
+  const linked = isLinked(state.creds);
+  const pairNumber = linked ? null : (cachedPairNumber || await resolvePairing());
   if (pairNumber) cachedPairNumber = pairNumber;
   const usePairing = !!pairNumber;
 
-  if (!registered) {
+  if (!linked) {
     console.log(usePairing
       ? `[VOLTA] Login method: pairing code (+${pairNumber})`
       : '[VOLTA] Login method: QR code  —  use "npm start -- --pair" for a code instead');
@@ -236,58 +284,41 @@ async function startBot() {
     // is not a browser name, and WhatsApp will issue a code that never reaches the
     // phone. Ubuntu/Chrome is the combination that reliably pairs.
     browser: Browsers.ubuntu('Chrome'),
-    logger: pino({ level: 'silent' }),
+    logger: pino({ level: process.env.BAILEYS_LOG_LEVEL || 'silent' }),
     syncFullHistory: false,
     markOnlineOnConnect: false,
     generateHighQualityLinkPreview: false,
     // Pairing sends an iq that can outlive the default query timeout and abort
     // the handshake with 428/408. Disabling the timeout is the documented fix.
     defaultQueryTimeoutMs: undefined,
-    qrTimeout: undefined,
+    // Keep the pairing socket alive long enough to actually type the code.
+    qrTimeout: usePairing ? PAIRING_REF_MS : undefined,
     connectTimeoutMs: 60_000,
     keepAliveIntervalMs: 30_000,
   });
   activeSock = sock;
 
-  // ---- Pairing code: request once, straight after the socket is up ----
-  // Requesting on the `qr` event is unreliable; the documented pattern is to
-  // check creds.registered and ask directly, after a short settle delay.
-  pairingRequested = false;
-  if (usePairing && !sock.authState.creds.registered) {
-    pairingRequested = true;
-    setTimeout(async () => {
-      if (myId !== socketId) return;
-      try {
-        const code = await sock.requestPairingCode(pairNumber);
-        const pretty = String(code).match(/.{1,4}/g).join('-');
-        console.log('\n' + '='.repeat(48));
-        console.log('   PAIRING CODE:   ' + pretty);
-        console.log('='.repeat(48));
-        console.log('   On your phone:');
-        console.log('     WhatsApp -> Settings -> Linked Devices');
-        console.log('       -> Link a device');
-        console.log('       -> "Link with phone number instead"');
-        console.log('       -> type the code above');
-        console.log('');
-        console.log('   The code lasts ~3 minutes. If it expires,');
-        console.log('   restart and a fresh one is issued.');
-        console.log('='.repeat(48) + '\n');
-      } catch (err) {
-        console.log('[VOLTA] Could not obtain a pairing code:', err && err.message);
-        console.log('   Check the number is in full international form, digits only.');
-        console.log('   If sessions/ is not empty, delete it and try again.');
-        console.log('   Or restart without --pair to use a QR code instead.');
-      }
-    }, 3000);
-  }
+  // ---- Pairing code ----
+  // Requested on the FIRST `qr` event of this socket. That event fires when the
+  // server sends pair-device, i.e. the noise handshake is done and WhatsApp is
+  // ready to accept a link request. The old fixed 3-second timer fired before
+  // that on slow connections, so requestPairingCode failed with "Connection
+  // Closed", printed an error and never tried again.
+  let codeRequested = false;
+  if (usePairing) hookStdinForNewCode();
 
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect, qr } = update;
+    const { connection, lastDisconnect, qr, isNewLogin } = update;
 
     // Ignore events from stale sockets — only the latest socket matters.
     if (myId !== socketId) return;
+
+    if (qr && usePairing && !codeRequested) {
+      codeRequested = true;
+      issuePairingCode(sock, myId, pairNumber);
+    }
 
     // ---- QR code ----
     if (qr && !usePairing) {
@@ -309,11 +340,14 @@ async function startBot() {
       }
     }
 
+    if (isNewLogin) console.log('[VOLTA] 📱 Phone accepted the link — finishing setup, the connection will restart once…');
+
     if (connection === 'connecting') console.log('[VOLTA] Connecting to WhatsApp…');
 
     if (connection === 'open') {
-      pairingRequested = false;
       reconnecting = false;
+      codesIssued = 0;
+      freshStartsUsed = 0;
       stableSince = Date.now();
       // Do NOT zero reconnectAttempts here — a socket that opens then dies
       // immediately would reset the backoff on every cycle and hammer WhatsApp.
@@ -337,8 +371,10 @@ async function startBot() {
     if (connection === 'close') {
       if (myId !== socketId) return;
 
-      const status = lastDisconnect && lastDisconnect.error
-        && new Boom(lastDisconnect.error).output.statusCode;
+      const err = lastDisconnect && lastDisconnect.error;
+      const status = err && new Boom(err).output.statusCode;
+      const reason = (err && err.message) || 'no reason given';
+      const wasLinked = isLinked(sock.authState.creds);
 
       stopPresenceCycling();
 
@@ -346,20 +382,41 @@ async function startBot() {
       if (activeSock === sock) activeSock = null;
       stableSince = 0;
 
-      // Fatal states. Retrying these forever is what turned a dead session into
-      // an endless "Reconnecting…" scroll: the credentials are gone or rejected,
-      // so no number of attempts will ever succeed.
-      const FATAL = new Set([
-        DisconnectReason.loggedOut,   // 401
-        403,                          // banned / forbidden
-        405,                          // not authorised for this connection
-      ]);
-      if (FATAL.has(status)) {
+      console.log(`[VOLTA] Connection closed — ${status || '?'} (${reason})${wasLinked ? '' : ' [not linked yet]'}`);
+
+      if (status === 403) {
         fatalStop = true;
-        console.log(`[VOLTA] ❌ WhatsApp rejected this session (${status}). Not retrying.`);
-        console.log('    Delete the sessions/ folder and link again:');
-        console.log('      rm -rf sessions   (Windows: rmdir /s /q sessions)');
+        console.log('[VOLTA] ❌ WhatsApp returned 403 (forbidden) — this number may be banned or restricted.');
+        console.log('    Check the account in the WhatsApp app before trying again.');
+        return;
+      }
+
+      // Logged out from the phone (or the session was revoked). The credentials
+      // are dead for good, so clear them now — the old code told the user to
+      // delete the folder by hand and then sat idle.
+      if (wasLinked && status === DisconnectReason.loggedOut) {
+        fatalStop = true;
+        resetSession('This device was logged out from the phone.');
+        console.log('[VOLTA] ❌ Logged out. Start the bot again to link it afresh:');
         console.log('      npm start -- --pair 234XXXXXXXXXX');
+        return;
+      }
+
+      // Rejected while still linking (401 bad code / 405 / 500 bad session).
+      // A half-linked session makes every later attempt fail the same way, so
+      // start over with brand-new keys — a limited number of times.
+      if (!wasLinked && [DisconnectReason.loggedOut, 405, DisconnectReason.badSession].includes(status)) {
+        freshStartsUsed++;
+        if (freshStartsUsed > MAX_FRESH_STARTS) {
+          fatalStop = true;
+          console.log(`[VOLTA] ❌ WhatsApp keeps rejecting the link (${status}).`);
+          console.log('    Check: the number is right, it has WhatsApp, and it has a free linked-device slot (max 4).');
+          console.log('    If 405 persists, WhatsApp changed version: set WA_VERSION in .env or update Baileys.');
+          return;
+        }
+        resetSession(`WhatsApp rejected the half-linked session (${status}); starting fresh.`);
+        cachedVersion = null;   // 405 is often a stale WA Web version — look it up again
+        scheduleReconnect(3000, 'Fresh session.');
         return;
       }
 
@@ -377,11 +434,23 @@ async function startBot() {
         return;
       }
 
+      // Pairing window ran out with nobody typing the code. Not an error — open
+      // a new socket and print a new code straight away (capped in issuePairingCode).
+      if (!wasLinked && usePairing && status === DisconnectReason.timedOut) {
+        console.log('[VOLTA] ⌛ The pairing code was not entered in time.');
+        scheduleReconnect(2000, 'Getting a new code.');
+        return;
+      }
+
+      // A linked session failing with 405 is usually an outdated WA Web version.
+      if (status === 405) cachedVersion = null;
+
       reconnectAttempts++;
       if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
         fatalStop = true;
         console.log(`[VOLTA] ❌ Gave up after ${MAX_RECONNECT_ATTEMPTS} failed reconnects (last status: ${status || 'unknown'}).`);
         console.log('    The bot is idle. Restart the process, or relink if this keeps happening.');
+        console.log('    For detail, run with BAILEYS_LOG_LEVEL=debug in .env.');
         return;
       }
 
@@ -440,6 +509,14 @@ async function startBot() {
 async function main() {
   globalThis.__botStartTime = Date.now();
   await connectDB();
+
+  // A half-linked session (keys created, link never completed) makes WhatsApp
+  // reject every later pairing attempt. Clear it on boot instead of just
+  // warning about it. A fully linked session is never touched.
+  const st = sessionState(SESSION_DIR);
+  if (st === 'unlinked' || st === 'corrupt') {
+    resetSession(`Found a ${st === 'corrupt' ? 'corrupt' : 'half-linked'} session from an earlier attempt.`);
+  }
 
   await startBot();
   startTipScheduler(() => activeSock, 60 * 1000);

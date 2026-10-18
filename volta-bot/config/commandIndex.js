@@ -22,6 +22,7 @@ const COMMANDS = {
   explain:   { cat: 'start', s: 'Plain-English explanation of any part of the game', u: '!explain <thing>', ex: '!explain chemistry' },
   invite:    { cat: 'start', s: 'Your referral code — you both get paid' },
   password:  { cat: 'start', s: 'Set your website password', u: '!password <password>' },
+  site:      { cat: 'start', s: 'Private one-tap link to the VOLTA website' },
   skiptour:  { cat: 'start', s: 'Skip the beginner walkthrough' },
 
   // ── YOUR SQUAD ───────────────────────────────────────────────────────────
@@ -172,7 +173,7 @@ const ALIASES = {
   brackets: 'bracket', tourney: 'competitions', tournament: 'competitions',
   bal: 'wallet', tut: 'tutorial', pong: 'ping',
   tourneyplay: 'competitions', playtourney: 'competitions', join: 'competitions',
-  tbv: 'bracket', weeklyawards: 'awards',
+  tbv: 'bracket', weeklyawards: 'awards', web: 'site', pvpadmin: 'clearpvp',
   a: 'chance', b: 'chance', c: 'chance', d: 'chance',
 
 };

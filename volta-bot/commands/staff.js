@@ -120,14 +120,20 @@ async function handle({ sock, msg, jid, sender, cmd, args }) {
     return;
   }
 
-  if (cmd === 'tourneyplay') {
+  // !playtourney is routed here too — it used to fall through every branch and
+  // get no reply at all.
+  if (cmd === 'tourneyplay' || cmd === 'playtourney') {
     if (!tourney.isActive()) { await sendText(sock, jid, `ℹ️ No tournament running.`, msg); return; }
     const t = tourney.summary();
     const m = (t.rounds || []).flat().find(mm => !mm.winner && !mm.simulated && (tourney.eff(mm.a) === sender || tourney.eff(mm.b) === sender));
     if (!m) { await sendText(sock, jid, `ℹ️ You have no pending tie (or it already resolved).`, msg); return; }
     const opp = tourney.eff(m.a) === sender ? tourney.eff(m.b) : tourney.eff(m.a);
-    const winner = Math.random() < 0.5 ? sender : opp;
-    m.winner = winner; m.simulated = true;
+    if (!opp || opp === 'BYE') { await sendText(sock, jid, `ℹ️ Your opponent isn't decided yet — wait for the other tie to finish.`, msg); return; }
+    // Strength-weighted sim, recorded through the bracket so it is saved, the
+    // next round / final / prize payout fire, and the tournament can complete.
+    // (It used to set m.winner directly: nothing was persisted or advanced.)
+    const winner = tourney.simulateWinner(sender, opp);
+    tourney.resolveByResult(sender, opp, winner);
     await sendText(sock, jid, `⚽ *${User.getByWhatsappId(sender)?.name}*'s tie simulated — winner: *${User.getByWhatsappId(winner)?.name}*.`, msg);
     return;
   }

@@ -1083,11 +1083,15 @@ async function finishPvP(s) {
   // The away side only gets rewards/rank when it's a real opponent (PvP).
   // In a vs-AI match awayId is the literal 'AI', so we must not write a fake
   // user record for it.
+  // Declared out here: the result report below reads it, and declaring it
+  // inside the block threw "awayFine is not defined" at the end of EVERY match,
+  // so the final report and payout message were never sent.
+  let awayFine = 0;
   if (!s.isAI) {
     const a = User.getByWhatsappId(s.awayId) || {};
     const awayWon = winnerId === s.awayId;
     const awayLossStreak = !awayWon && !isDraw ? (a.lossStreak || 0) + 1 : 0;
-    const awayFine = awayLossStreak >= 3 ? Math.round(20 * (awayLossStreak - 2)) : 0;
+    awayFine = awayLossStreak >= 3 ? Math.round(20 * (awayLossStreak - 2)) : 0;
     User.update(s.awayId, {
       inMatch: false, currentMatchId: null,
       currency: (a.currency || 0) + awayReward - awayFine,

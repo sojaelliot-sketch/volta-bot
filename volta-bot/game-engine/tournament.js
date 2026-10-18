@@ -516,7 +516,7 @@ function summary() {
 }
 
 module.exports = {
-  isActive, cancel, create, addPlayer, start, resolveByResult, findMatch,
+  isActive, cancel, create, addPlayer, start, resolveByResult, findMatch, simulateWinner,
   allMatches, summary, teamStrength, eff, pendingMatchFor, startTChallenge,
   bettingOpen, getBet, placeBet, nameOf, announceMatchOrder, getPendingMatches,
 };

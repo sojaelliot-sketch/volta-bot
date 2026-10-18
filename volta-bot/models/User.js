@@ -193,12 +193,22 @@ function roleRank(role) {
   return MODERATION.ROLE_RANK[role] || 0;
 }
 
+function ownerIds() {
+  const list = [MODERATION.OWNER_ID, ...(MODERATION.OWNER_ALIASES || [])];
+  if (process.env.OWNER_ALIASES) list.push(...String(process.env.OWNER_ALIASES).split(','));
+  return list.map((x) => String(x || '').replace(/\D/g, '')).filter(Boolean);
+}
+
 function isOwner(id) {
-  // Normalize both sides to digits only so "@s.whatsapp.net" and any
-  // formatting differences don't break the comparison.
-  const bare = String(id || '').replace(/\D/g, '');
-  const owner = String(MODERATION.OWNER_ID || '').replace(/\D/g, '');
-  return !!bare && bare === owner;
+  // Compare digits only (strip "@s.whatsapp.net", "@lid" and the ":device"
+  // suffix) against the owner's LID and phone-number aliases.
+  const bare = String(id || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+  return !!bare && ownerIds().includes(bare);
+}
+
+/** The single canonical jid every owner alias is mapped to (one profile). */
+function ownerJid() {
+  return `${String(MODERATION.OWNER_ID).replace(/\D/g, '')}@s.whatsapp.net`;
 }
 
 function isStaff(user) {
@@ -227,5 +237,5 @@ function cooldownRemainingMs(user) {
 
 module.exports = {
   create, getByWhatsappId, getByWhatsAppId: getByWhatsappId, getOrCreate, update, addCurrency, transferCurrency, winRate, all, genRefCode, findByName,
-  roleRank, isOwner, isStaff, isBanned, banRemainingMs, isOnCooldown, cooldownRemainingMs, normalizeJid,
+  roleRank, isOwner, ownerJid, isStaff, isBanned, banRemainingMs, isOnCooldown, cooldownRemainingMs, normalizeJid,
 };

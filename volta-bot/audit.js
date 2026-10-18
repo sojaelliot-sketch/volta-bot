@@ -3,6 +3,7 @@
 const fs=require('fs'),os=require('os'),path=require('path');
 process.env.DATA_DIR=fs.mkdtempSync(path.join(os.tmpdir(),'vt-audit-'));
 const {MODERATION}=require('./config/constants');
+process.env.VOLTA_TEST_FAST='1';
 MODERATION.COOLDOWN_MS=0; MODERATION.WARNINGS_BEFORE_BAN=999999; MODERATION.OPEN_REGISTRATION=true;
 // The anti-ban layer sleeps before every send (rate limiter, burst protection,
 // health pause). Real behaviour, but it makes a 158-command sweep take an hour.
@@ -70,7 +71,8 @@ for(const cmd of routed){
   const arg=ARGS[cmd]!==undefined?ARGS[cmd]:'';
   const text=`!${cmd}${arg?' '+arg:''}`;
   const chat=GROUP_ONLY.has(cmd)?G:null;
-  const who=OWNER;   // owner passes every permission gate
+  // AUDIT_AS=user runs everything as a normal player to exercise the denial paths.
+  const who=process.env.AUDIT_AS==='user'?A:OWNER;
   sent.length=0;
   let threw=null, timedOut=false;
   try{
@@ -95,7 +97,9 @@ if(broken.length){
 } else console.log('\n✅ none throw and none return the generic error');
 if(soft.length){
   console.log(`\n🔇 SILENT (${soft.length}):`);
-  for(const s of soft) console.log(`  ${s.text.padEnd(24)} ${s.why}`);
+  for(const s of soft) console.log(`  ${s.text.padEnd(24)} (no reply)`);
 }
 console.log();
+// Scheduler/match timers keep the event loop alive — exit explicitly.
+setTimeout(() => process.exit(broken.length || soft.length ? 1 : 0), 100);
 })();

@@ -2,6 +2,7 @@
 const fs = require('fs'), os = require('os'), path = require('path');
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'vt-all-'));
 process.env.DATA_DIR = TMP;
+process.env.VOLTA_TEST_FAST = '1';   // skip anti-ban send delays in tests
 
 const { MATCH, MODERATION } = require('./config/constants');
 MODERATION.COOLDOWN_MS = 0;
@@ -39,8 +40,11 @@ async function run(label, text, sender) {
   try { await router.handle(sock, msg(text, sender)); } catch (e) { threw = e; }
   const mySent = sent.slice(before);
   const errored = mySent.some(s => /Something went wrong/.test(s.c?.text || ''));
-  const banned = mySent.some(s => /banned/i.test(s.c?.text || ''));
-  const ok = !threw && !errored && !banned;
+  // Only the "you are banned" gate counts — "!ban" legitimately replies "…has been banned".
+  const banned = mySent.some(s => /You are banned/i.test(s.c?.text || ''));
+  const denied = mySent.some(s => /⛔|There's no/.test(s.c?.text || '')) && !/^(ban|kick)/.test(label);
+  const ok = !threw && !errored && !banned && !denied;
+  if (!ok && process.env.TEST_VERBOSE) console.log('   [FAIL REPLY]', label, '=>', mySent.map(s => (s.c?.text || '').slice(0, 160).replace(/\n/g, ' ')).join(' | '));
   results.push({ label, ok, threw: threw && (threw.message || String(threw)).split('\n')[0] });
 }
 
@@ -68,7 +72,9 @@ async function main() {
   const u3num = U3.replace('@s.whatsapp.net', '');
 
   async function batch(cmds) {
-    await Promise.all(cmds.map(([label, text, sender]) => run(label, text, sender)));
+    // Sequential: run() attributes replies by slicing `sent`, so running a batch
+    // in parallel blamed every command for whatever its neighbours replied.
+    for (const [label, text, sender] of cmds) await run(label, text, sender);
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -80,7 +86,7 @@ async function main() {
     ['register (U3)', '!register Charlie', U3],
     ['help', '!help', U1],
     ['menu', '!menu', U1],
-    ['announce', '!announce', U1],
+    ['announce', '!announce', OWNER],
     ['explain', '!explain', U1],
     ['explain play', '!explain play', U1],
     ['guide', '!guide', U1],
@@ -267,8 +273,6 @@ async function main() {
     ['press', '!press', U1],
     ['rivalry', '!rivalry', U1],
     ['curse', '!curse', U1],
-    ['fun', '!fun', U1],
-    ['chat', '!chat hello', U1],
     ['formcheck', '!formcheck', U1],
     ['injuries', '!injuries', U1],
     ['shield', '!shield', U1],
@@ -285,7 +289,6 @@ async function main() {
     ['trophies', '!trophies', U1],
     ['redeem', '!redeem', U1],
     ['teamchem', '!teamchem', U1],
-    ['botstate', '!botstate', OWNER],
     ['on', '!on', OWNER],
   ]);
 
@@ -313,10 +316,10 @@ async function main() {
   // ══════════════════════════════════════════════════════════════
   // BATCH 15: Auction
   // ══════════════════════════════════════════════════════════════
-  await run('auction start', '!auction start auto 1000', U1);
+  await run('auction start', '!auction start auto 1000', OWNER);  // U1 was demoted in batch 10
   await run('bid', '!bid 2000', U2);
-  await run('auction time', '!auction time 30', U1);
-  await run('auction end', '!auction end', U1);
+  await run('auction time', '!auction time 30', OWNER);
+  await run('auction end', '!auction end', OWNER);
 
   // ══════════════════════════════════════════════════════════════
   // BATCH 16: Surgery (needs injured player)

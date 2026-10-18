@@ -233,6 +233,11 @@ module.exports = {
   // ─── MODERATION ────────────────────────────────────────────────────────
   MODERATION: {
     OWNER_ID: '134643298873543',
+    // Other IDs that are ALSO the owner. WhatsApp now reports the same person as
+    // a LID (134643…) in groups but often as the phone number (234…) in DMs, so
+    // with only OWNER_ID set the owner lost every owner command in one of the
+    // two. Add more in .env as OWNER_ALIASES=2348012345678,1234567890
+    OWNER_ALIASES: ['2349011861051'],
     OPEN_REGISTRATION: true,           // when false, only the owner account can exist; set false to lock sign-ups
     COOLDOWN_MS: 4000,                 // min gap between commands for normal users
     WARNINGS_BEFORE_BAN: 3,            // spam warnings before auto-ban

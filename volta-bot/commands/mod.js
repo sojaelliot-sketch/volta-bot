@@ -64,6 +64,13 @@ async function handle({ sock, msg, jid, sender, cmd, args, replyTo, mentioned })
 
     if (cmd === 'mods') return; // handled above
 
+    // Accept both "!cooldown 60 <id>" and "!cooldown <id> 60". The minutes-first
+    // order (the one in the help text) used to fail with "Reply to the user…".
+    if (cmd === 'cooldown' && !replyTo && !mentioned && args.length >= 2
+        && /^\d{1,5}$/.test(args[0]) && !/^\d{1,5}$/.test(args[1])) {
+      args = [args[1], args[0], ...args.slice(2)];
+    }
+
     const targetJid = resolveTarget(args, { replyTo, mentioned });
     if (!targetJid) {
       await sendText(sock, jid, `⚠️ Reply to the user, @mention them, or use *!${cmd} [id]*.`, msg);

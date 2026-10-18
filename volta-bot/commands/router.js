@@ -133,6 +133,7 @@ const handlers = {
   afk: () => require('./botstate'),
   reload: () => require('./reload'),
   clearpvp: () => require('./pvpadmin'),
+  pvpadmin: () => require('./pvpadmin'),
   explain: () => require('./explain'),
   guide: () => require('./explain'),
   how: () => require('./explain'),
@@ -221,7 +222,7 @@ function nativeFlowId(message) {
 function looksLikeJid(arg) {
   if (!arg) return false;
   // Match phone numbers (6+ digits) or full JIDs (e.g. 1234567890@s.whatsapp.net)
-  return /^\d{6,}$/.test(arg) || /^\d+@s\.whatsapp\.net$/.test(arg);
+  return /^\+?\d{6,}$/.test(arg) || /^\d+(:\d+)?@(s\.whatsapp\.net|lid)$/.test(arg);
 }
 
 // Resolve a target manager by an explicit jid/id, a reply, a @mention, or a
@@ -248,8 +249,9 @@ function resolveByName(arg) {
 
 function resolveTarget(args, ctx = {}) {
   if (args && args.length && looksLikeJid(args[0])) {
-    const a = args[0].trim();
-    return a.includes('@') ? a : `${a}@s.whatsapp.net`;
+    const a = args[0].trim().replace(/^\+/, '');
+    const j = User.normalizeJid(a.includes('@') ? a : `${a}@s.whatsapp.net`);
+    return User.isOwner(j) ? User.ownerJid() : j;
   }
   if (ctx.replyTo) return ctx.replyTo;
   if (ctx.mentioned) return ctx.mentioned;
@@ -269,9 +271,11 @@ async function handle(sock, msg) {
     // regardless of which number the bot is paired with.
     const botJid = sock?.user?.id ? User.normalizeJid(sock.user.id) : null;
     const botIsOwner = botJid ? User.isOwner(botJid) : false;
-    const sender = msg.key?.fromMe && botIsOwner
-      ? User.normalizeJid(`${MODERATION.OWNER_ID}@s.whatsapp.net`)
+    const rawSender = msg.key?.fromMe && botIsOwner
+      ? User.ownerJid()
       : User.normalizeJid(msg.key?.participant || jid);
+    // Every owner alias (LID or phone number) acts as the same owner profile.
+    const sender = User.isOwner(rawSender) ? User.ownerJid() : rawSender;
     if (jid === 'status@broadcast') return;
 
     const text = extractText(msg.message).trim();
